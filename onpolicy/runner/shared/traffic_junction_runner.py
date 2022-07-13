@@ -195,7 +195,9 @@ class TrafficJunctionRunner(Runner):
 
             if eval_episode >= self.all_args.eval_episodes:
                 eval_episode_rewards = np.array(eval_episode_rewards)
+                print(eval_episode_success)
                 eval_episode_success /= eval_episode
+                print(eval_episode_success)
                 eval_env_infos = {'eval_average_episode_rewards': eval_episode_rewards, 'eval_average_episode_success': eval_episode_success}
                 self.log_env(eval_env_infos, total_num_steps)
 

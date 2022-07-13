@@ -1,0 +1,26 @@
+name: gym_graph
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - ffmpeg
+  - gym=0.18.0
+  - joblib
+  - pip
+  - python=3.8
+  - setuptools
+  - six
+  - tqdm
+  - pip:
+      - moviepy
+      - numpy
+      - openpyxl
+      - pandas
+      - pathos
+      - pqdict
+      - ray[all]==1.12.1
+      - redis
+      - tensorboard
+      - scikit-image
+      - seaborn
+      - GPUtil

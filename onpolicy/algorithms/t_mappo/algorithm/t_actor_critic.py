@@ -34,9 +34,11 @@ class MAC_R_Actor(nn.Module):
         self.args = args
 
         obs_shape = get_shape_from_obs_space(obs_space)
-        base = CNNBase if len(obs_shape) == 3 else MLPBase
-        self.base = base(args, obs_shape)
+        # base = CNNBase if len(obs_shape) == 3 else MLPBase
+        # self.base = base(args, obs_shape)
+        self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
+        print(self._use_recurrent_policy)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
@@ -74,6 +76,9 @@ class MAC_R_Actor(nn.Module):
 
         # communicate
         actor_features = self.communicate(actor_features)
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
 
@@ -109,7 +114,9 @@ class MAC_R_Actor(nn.Module):
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         # communicate
-
+        actor_features = self.communicate(actor_features)
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
                                                                    action, available_actions,
@@ -140,11 +147,14 @@ class R_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
-        base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
-        self.base = base(args, cent_obs_shape)
+        # base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
+        # self.base = base(args, cent_obs_shape)
+        self.base = nn.Linear(cent_obs_shape[0], self.hidden_size)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+
+        self.communicate = MAC(args, device)
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
@@ -173,6 +183,12 @@ class R_Critic(nn.Module):
         critic_features = self.base(cent_obs)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+
+        # communicate
+        critic_features = self.communicate(critic_features)
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+
         values = self.v_out(critic_features)
 
         return values, rnn_states
