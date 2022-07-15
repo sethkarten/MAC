@@ -4,6 +4,7 @@ import numpy as np
 from functools import reduce
 import torch
 from onpolicy.runner.shared.base_runner import Runner
+from onpolicy.utils.util import set_lr
 
 def _t2n(x):
     return x.detach().cpu().numpy()
@@ -12,6 +13,7 @@ class TrafficJunctionRunner(Runner):
     """Runner class to perform training, evaluation. and data collection for TrafficJunction. See parent class for details."""
     def __init__(self, config):
         super(TrafficJunctionRunner, self).__init__(config)
+        self.best = 0
 
     def run(self):
         self.warmup()
@@ -66,6 +68,14 @@ class TrafficJunctionRunner(Runner):
 
                 if self.env_name == "TrafficJunction":
                     success_rate = np.mean(success / success_eps)
+                    if success_rate > self.best:
+                        self.best = success_rate
+                        self.save_best()
+                    if success_rate >= .97:
+                        # decrease learning rate significantly
+                        print("Setting lr to 1e-5")
+                        set_lr(self.trainer.policy.actor_optimizer, 1e-5)
+                        set_lr(self.trainer.policy.critic_optimizer, 1e-5)
                     success = np.zeros(self.n_rollout_threads)
                     success_eps = 0
                     print("Success rate is {}.".format(success_rate))

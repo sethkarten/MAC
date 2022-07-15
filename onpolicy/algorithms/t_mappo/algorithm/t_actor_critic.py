@@ -47,6 +47,9 @@ class MAC_R_Actor(nn.Module):
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
+        # autoencoder
+        self.decode = nn.Linear(self.hidden_size, obs_shape[0])
+
         self.to(device)
 
     def forward(self, obs, rnn_states, masks, available_actions=None, deterministic=False):
@@ -115,6 +118,7 @@ class MAC_R_Actor(nn.Module):
 
         # communicate
         actor_features = self.communicate(actor_features)
+        decoded = self.decode(actor_features)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
@@ -123,8 +127,8 @@ class MAC_R_Actor(nn.Module):
                                                                    active_masks=
                                                                    active_masks if self._use_policy_active_masks
                                                                    else None)
-
-        return action_log_probs, dist_entropy
+        ae_loss = nn.functional.mse_loss(decoded, obs)
+        return action_log_probs, dist_entropy, ae_loss
 
 
 class R_Critic(nn.Module):
@@ -154,7 +158,7 @@ class R_Critic(nn.Module):
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
-        self.communicate = MAC(args, device)
+        # self.communicate = MAC(args, device)
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
@@ -185,9 +189,9 @@ class R_Critic(nn.Module):
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         # communicate
-        critic_features = self.communicate(critic_features)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+        # critic_features = self.communicate(critic_features)
+        # if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+        #     critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         values = self.v_out(critic_features)
 
