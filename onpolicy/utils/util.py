@@ -20,6 +20,10 @@ def update_linear_schedule(optimizer, epoch, total_num_epochs, initial_lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+def set_lr(optimizer, lr):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
 def huber_loss(e, d):
     a = (abs(e) <= d).float()
     b = (e > d).float()
