@@ -1,9 +1,9 @@
 import torch
-from onpolicy.algorithms.t_mappo.algorithm.t_actor_critic import MAC_R_Actor, R_Critic
+from onpolicy.algorithms.r_mappo_comm.algorithm.r_actor_critic import MAC_R_Actor, R_Critic
 from onpolicy.utils.util import update_linear_schedule
 
 
-class T_MAPPOPolicy:
+class R_MAPPOPolicy:
     """
     MAPPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
 
