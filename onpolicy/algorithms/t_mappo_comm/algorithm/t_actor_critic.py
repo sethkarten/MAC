@@ -71,13 +71,14 @@ class MAC_T_Actor(nn.Module):
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+        actor_features = self.embed(obs)
         actor_features = self.encoder(actor_features)
         # TODO: repeat for R communication rounds (multi-round comm)
         actor_features = self.communicate(actor_features)
         actor_features = self.decoder(actor_features)
+        seq_states = actor_features.clone()
         # TODO: use actor_features from decoder to update seq_states (autoregressive)
-        
+
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
         return actions, action_log_probs, seq_states
 
