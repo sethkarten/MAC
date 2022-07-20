@@ -63,8 +63,12 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        from onpolicy.algorithms.t_mappo.t_mappo import T_MAPPO as TrainAlgo
-        from onpolicy.algorithms.t_mappo.algorithm.tMAPPOPolicy import T_MAPPOPolicy as Policy
+        if self.all_args.algorithm_name == 'r_mappo_comm':
+            from onpolicy.algorithms.r_mappo_comm.r_mappo_comm import R_MAPPO_COMM as TrainAlgo
+            from onpolicy.algorithms.r_mappo_comm.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == 't_mappo_comm':
+            from onpolicy.algorithms.t_mappo_comm.t_mappo_comm import T_MAPPO_COMM as TrainAlgo
+            from onpolicy.algorithms.t_mappo_comm.algorithm.tMAPPOPolicy import T_MAPPOPolicy as Policy
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
         # print(share_observation_space)

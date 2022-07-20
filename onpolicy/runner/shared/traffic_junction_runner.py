@@ -107,6 +107,7 @@ class TrafficJunctionRunner(Runner):
 
     @torch.no_grad()
     def collect(self, step):
+        # TODO: add transformer buffer states
         self.trainer.prep_rollout()
         value, action, action_log_prob, rnn_state, rnn_state_critic \
             = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),

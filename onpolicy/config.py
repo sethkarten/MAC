@@ -198,14 +198,14 @@ def get_config():
                         default=False, help="Whether to use stacked_frames")
     parser.add_argument("--hidden_size", type=int, default=64,
                         help="Dimension of hidden layers for actor/critic networks")
-    parser.add_argument("--layer_N", type=int, default=1,
+    parser.add_argument("--layer_N", type=int, default=0,
                         help="Number of layers for actor/critic networks")
     parser.add_argument("--use_ReLU", action='store_false',
                         default=True, help="Whether to use ReLU")
     parser.add_argument("--use_popart", action='store_true', default=False, help="by default False, use PopArt to normalize rewards.")
     parser.add_argument("--use_valuenorm", action='store_false', default=True, help="by default True, use running mean and std to normalize rewards.")
-    parser.add_argument("--use_feature_normalization", action='store_false',
-                        default=True, help="Whether to apply layernorm to the inputs")
+    parser.add_argument("--use_feature_normalization", action='store_true',
+                        default=False, help="Whether to apply layernorm to the inputs")
     parser.add_argument("--use_orthogonal", action='store_false', default=True,
                         help="Whether to use Orthogonal initialization for weights and 0 initialization for biases")
     parser.add_argument("--gain", type=float, default=0.01,
@@ -214,11 +214,18 @@ def get_config():
     # recurrent parameters
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',
                         default=False, help='Whether to use a naive recurrent policy')
-    parser.add_argument("--use_recurrent_policy", action='store_false',
-                        default=True, help='use a recurrent policy')
+    parser.add_argument("--use_recurrent_policy", action='store_true',
+                        default=False, help='use a recurrent policy')
     parser.add_argument("--recurrent_N", type=int, default=1, help="The number of recurrent layers.")
     parser.add_argument("--data_chunk_length", type=int, default=10,
-                        help="Time length of chunks used to train a recurrent_policy")
+                        help="Time length of chunks used to train a recurrent_policy or transformer_policy")
+
+    # transformer parameters
+    parser.add_argument("--use_transformer_policy", action='store_false',
+        default=True, help='use a transformer policy')
+    parser.add_argument("--transformer_heads", type=int, default=1, help="The number of attention heads.")
+    parser.add_argument("--mha_comm", action='store_false',
+        default=True, help='use a multi-headed attention when receiving communication')
 
     # optimizer parameters
     parser.add_argument("--lr", type=float, default=5e-4,

@@ -2,13 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from onpolicy.algorithms.utils.attention import SelfAttention
 # import gumbel softmax
 class MAC(nn.Module):
     """
     Multi-Agent Communication Module.
     Facilitates emergent communication among agents
     """
-    def __init__(self, args, device=torch.device("cpu")):
+    def __init__(self, args, active_fun, gain, device=torch.device("cpu")):
         super(MAC, self).__init__()
         self.num_agents = args.num_agents
         self.b = args.n_rollout_threads
@@ -16,12 +17,18 @@ class MAC(nn.Module):
         self.comm_dim = self.args.hidden_size
         self.comm_action_one = True
         self.comm_action_zero = False
-        self.mha_comm = False
+        self.mha_comm = args.mha_comm
         self.comm_mode = 'avg'
         # self.comm_passes = args.comm_passes
+        self.active_fun = active_fun
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][args.use_orthogonal]
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
         self.tpdv = dict(dtype=torch.float32, device=device)
 
+        # create communication action
+        self.comm_act = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
         # Mask for communication
         if self.comm_action_zero:
             self.comm_mask = torch.zeros(self.num_agents, self.num_agents).to(**self.tpdv)
@@ -30,22 +37,32 @@ class MAC(nn.Module):
             self.comm_mask = torch.ones(self.num_agents, self.num_agents) \
                             - torch.eye(self.num_agents, self.num_agents).to(**self.tpdv)
 
-        self.comm_head = nn.Linear(self.comm_dim, self.comm_dim)
+        if self.mha_comm:
+            self.comm_self_att = Attention(args.num_heads, self.comm_dim, active_func, gain, dropout=0, hidden_size=self.args.hidden_size)
+        else:
+            self.comm_sum_head = init_(nn.Linear(self.comm_dim, self.args.hidden_size))
+        self.comm_head = init_(nn.Linear(self.args.hidden_size, self.args.hidden_size))
 
-
-    def forward(self, comm, info={}):
-        input_comm = comm
+    def forward(self, hidden_state, info={}):
+        # ================== DECODING PHASE BEGINNING ===================
+        # communication embedding
+        comm = self.comm_act(hidden_state)
         self.b = comm.shape[0] // self.num_agents
         comm = comm.reshape(self.b, self.num_agents, self.comm_dim)
         comm, comm_prob, comm_mask = self.communicate(comm, info)
+        # decode communication
         if self.mha_comm:
-            comm = self.attend_comm(comm.view(self.b, self.num_agents, self.num_agents ,self.comm_dim).transpose(1,0), mask=comm_mask, is_comm=True)
+            # Reshape to account for number of agents in batch
+            comm = comm.view(self.b, self.num_agents, self.num_agents, self.comm_dim).transpose(2,1)
+            comm = comm.reshape(self.b * self.num_agents, self.num_agents, self.comm_dim)
+            comm = self.comm_self_att(comm, comm, comm, mask=comm_mask, is_comm=True)
         else:
             comm_sum = comm.sum(dim=1)
-            comm_sum = comm_sum.reshape(self.b * self.num_agents, self.comm_dim)
-            comm = self.comm_head(comm_sum)
-            comm = torch.tanh(comm)
-        return input_comm + comm
+            comm = comm_sum.reshape(self.b * self.num_agents, self.comm_dim)
+            # resize
+            comm = self.comm_sum_head(comm)
+        comm = self.active_fun(self.comm_head(comm)) # add nonlinearity between message rounds
+        return comm
 
     def communicate(self, comm, info={}):
         n = self.num_agents

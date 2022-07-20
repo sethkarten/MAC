@@ -5,7 +5,7 @@ from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
 
-class T_MAPPO():
+class T_MAPPO_COMM():
     """
     Trainer class for MAPPO to update policies.
     :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -31,6 +31,7 @@ class T_MAPPO():
         self.huber_delta = args.huber_delta
 
         self._use_recurrent_policy = args.use_recurrent_policy
+        self._use_transformer_policy = args.use_transformer_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
         self._use_max_grad_norm = args.use_max_grad_norm
         self._use_clipped_value_loss = args.use_clipped_value_loss
@@ -197,6 +198,8 @@ class T_MAPPO():
                 data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
             elif self._use_naive_recurrent:
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
+            elif self._use_transformer_policy:
+                data_generator = buffer.transformer_generator(advantages, self.num_mini_batch, self.data_chunk_length)
             else:
                 data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
 

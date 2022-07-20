@@ -8,7 +8,7 @@ from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.attention import SelfAttention
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
-from onpolicy.algorithms.t_mappo.algorithm.comm import MAC
+from onpolicy.algorithms.utils.comm import MAC
 
 class MAC_R_Actor(nn.Module):
     """
