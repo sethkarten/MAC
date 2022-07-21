@@ -112,6 +112,7 @@ class T_MAPPO_COMM():
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
+        print("ppo update",share_obs_batch.shape, obs_batch.shape)
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy, ae_loss = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch,

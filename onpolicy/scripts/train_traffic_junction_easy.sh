@@ -1,10 +1,10 @@
 #!/bin/sh
 env="TrafficJunction"
-algo="rmappo"
+algo="t_mappo_comm"
 difficulty="easy"
 num_agents=5
 episode_length=20
-exp="mlp"
+exp="t_mappo_comm"
 seed_max=1
 
 echo "env is ${env}, map is ${map}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"

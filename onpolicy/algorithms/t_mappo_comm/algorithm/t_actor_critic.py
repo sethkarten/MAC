@@ -5,7 +5,7 @@ from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.mlp import MLPBase
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
-from onpolicy.algorithms.utils.attention import TransformerEncoder, TransformerDecoder
+from onpolicy.algorithms.utils.transformer import TransformerEncoder, TransformerDecoder
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.comm import MAC
@@ -38,7 +38,7 @@ class MAC_T_Actor(nn.Module):
         # embed input state
         self.embed = MLPBase(args, obs_shape)
 
-        self.encoder = TransformerEncoder(args, self._active_func, self._gain)
+        self.encoder = TransformerEncoder(args, self._active_func, self._gain, device=device)
 
         self.communicate = MAC(args, self._active_func, self._gain, device)
 
@@ -66,28 +66,32 @@ class MAC_T_Actor(nn.Module):
         :return seq_states: (torch.Tensor) updated seq hidden states.
         """
         obs = check(obs).to(**self.tpdv)
+        seq_states[:, :-1] = seq_states[:, 1:]      # update buffer for new autoregressive observation
         seq_states = check(seq_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
         actor_features = self.embed(obs)
-        actor_features = self.encoder(actor_features)
-        # TODO: repeat for R communication rounds (multi-round comm)
-        actor_features = self.communicate(actor_features)
-        actor_features = self.decoder(actor_features)
-        seq_states = actor_features.clone()
-        # TODO: use actor_features from decoder to update seq_states (autoregressive)
+        seq_states[:, -1] = actor_features.clone()  # add embedded obs
+        actor_features = self.encoder(seq_states)
+        print("forward", actor_features.shape, seq_states.shape)
+        # repeat for R communication rounds (multi-round comm)
+        c = actor_features
+        for i in range(self.args.comm_rounds):
+            c = self.communicate(c)
+        actor_features = self.decoder(c, actor_features)
+        seq_states[:, -1] = actor_features.clone()  # update for embedded obs + comm
 
-        actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
+        actions, action_log_probs = self.action_head(actor_features, available_actions, deterministic)
         return actions, action_log_probs, seq_states
 
-    def evaluate_actions(self, obs, rnn_states, action, masks, available_actions=None, active_masks=None):
+    def evaluate_actions(self, obs, seq_states, action, masks, available_actions=None, active_masks=None):
         """
         Compute log probability and entropy of given actions.
         :param obs: (torch.Tensor) observation inputs into network.
         :param action: (torch.Tensor) actions whose entropy and log probability to evaluate.
-        :param rnn_states: (torch.Tensor) if RNN network, hidden states for RNN.
+        :param seq_states: (torch.Tensor) if RNN network, hidden states for RNN.
         :param masks: (torch.Tensor) mask tensor denoting if hidden states should be reinitialized to zeros.
         :param available_actions: (torch.Tensor) denotes which actions are available to agent
                                                               (if None, all actions available)
@@ -97,7 +101,9 @@ class MAC_T_Actor(nn.Module):
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        # seq_states[:, :-1] = seq_states[:, 1:]      # update buffer for new autoregressive observation
+        seq_states = check(seq_states).to(**self.tpdv)
+        print(seq_states.shape)
         action = check(action).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
@@ -106,18 +112,17 @@ class MAC_T_Actor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+        print(available_actions.shape)
+        # actor_features = self.embed(obs)
+        actor_features = self.encoder(seq_states)
+        print("eval_act", obs.shape, actor_features.shape, seq_states.shape)
+        # repeat for R communication rounds (multi-round comm)
+        c = actor_features
+        for i in range(self.args.comm_rounds):
+            c = self.communicate(c)
+        actor_features = self.decoder(c, actor_features)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
-
-        # communicate
-        actor_features = self.communicate(actor_features)
-        decoded = self.decode(actor_features)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
-
-        action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
+        action_log_probs, dist_entropy = self.action_head.evaluate_actions(actor_features,
                                                                    action, available_actions,
                                                                    active_masks=
                                                                    active_masks if self._use_policy_active_masks
@@ -136,6 +141,9 @@ class T_Critic(nn.Module):
     """
     def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
         super(T_Critic, self).__init__()
+        self.args = args
+        self._active_func = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
+        self._gain = args.gain
         self.hidden_size = args.hidden_size
         self._use_orthogonal = args.use_orthogonal
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
@@ -146,14 +154,13 @@ class T_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
-        # base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
-        # self.base = base(args, cent_obs_shape)
-        self.base = nn.Linear(cent_obs_shape[0], self.hidden_size)
+        self.embed = MLPBase(args, cent_obs_shape)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+        self.encoder = TransformerEncoder(args, self._active_func, self._gain, device=device)
 
-        # self.communicate = MAC(args, device)
+        self.communicate = MAC(args, self._active_func, self._gain, device)
+
+        self.decoder = TransformerDecoder(args, self._active_func, self._gain)
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
@@ -165,29 +172,31 @@ class T_Critic(nn.Module):
 
         self.to(device)
 
-    def forward(self, cent_obs, rnn_states, masks):
+    def forward(self, cent_obs, seq_states, masks):
         """
         Compute actions from the given inputs.
         :param cent_obs: (np.ndarray / torch.Tensor) observation inputs into network.
-        :param rnn_states: (np.ndarray / torch.Tensor) if RNN network, hidden states for RNN.
+        :param seq_states: (np.ndarray / torch.Tensor) if RNN network, hidden states for RNN.
         :param masks: (np.ndarray / torch.Tensor) mask tensor denoting if RNN states should be reinitialized to zeros.
 
         :return values: (torch.Tensor) value function predictions.
-        :return rnn_states: (torch.Tensor) updated RNN hidden states.
+        :return seq_states: (torch.Tensor) updated RNN hidden states.
         """
         cent_obs = check(cent_obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
+        seq_states[:, :-1] = seq_states[:, 1:]      # update buffer for new autoregressive observation
+        seq_states = check(seq_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
 
-        critic_features = self.base(cent_obs)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
-
-        # communicate
-        # critic_features = self.communicate(critic_features)
-        # if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-        #     critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+        critic_features = self.embed(cent_obs)
+        seq_states[:, -1] = critic_features.clone()  # add embedded obs
+        critic_features = self.encoder(seq_states)
+        # repeat for R communication rounds (multi-round comm)
+        # c = critic_features
+        # for i in range(self.args.comm_rounds):
+        #     c = self.communicate(c)
+        # critic_features = self.decoder(c, critic_features)
+        # seq_states[:, -1] = critic_features.clone()  # update for embedded obs + comm
 
         values = self.v_out(critic_features)
 
-        return values, rnn_states
+        return values, seq_states

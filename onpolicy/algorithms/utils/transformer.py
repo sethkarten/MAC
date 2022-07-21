@@ -2,24 +2,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from util import init
+from .util import init
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, args, active_func, gain):
+    def __init__(self, args, active_func, gain, device=torch.device("cpu")):
         super(TransformerEncoder, self).__init__()
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][args.use_orthogonal]
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
-        self.attention = Attention(args.num_heads, args.hidden_size, active_func, gain, dropout=0)
-        self.ln1 = nn.LayerNorm(args.hidden_size)
+        # positional encoding
+        self.pe = PositionalEncoding(args.hidden_size, args.num_agents, args.data_chunk_length, dropout=0)
+
+        self.attention = Attention(args.transformer_heads, args.hidden_size, active_func, gain, args, dropout=0)
         self.hidden_head = init_(nn.Linear(args.hidden_size, args.hidden_size))
-        self.ln2 = nn.LayerNorm(args.hidden_size)
+        self.ln = nn.LayerNorm(args.hidden_size)
         self.active_func = active_func
 
     def forward(self, x):
-        x = self.ln1(x + self.attention(x, x, x))
-        x = self.ln2(x + self.active_func(self.hidden_head(x)))
+        x = self.pe(x)
+        x = self.attention(x, x, x)
+        x = self.ln(x + self.active_func(self.hidden_head(x)))
         return x
 
 class TransformerDecoder(nn.Module):
@@ -27,44 +30,48 @@ class TransformerDecoder(nn.Module):
         super(TransformerDecoder, self).__init__()
 
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][args.use_orthogonal]
+        self.active_func = active_func
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
-        self.attention = Attention(args.num_heads, args.hidden_size, active_func, gain, dropout=0, hidden_size=args.hidden_size)
+        self.attention = Attention(args.transformer_heads, args.hidden_size, active_func, gain, args, dropout=0, hidden_size=args.hidden_size)
         self.ln1 = nn.LayerNorm(args.hidden_size)
         self.hidden_head = init_(nn.Linear(args.hidden_size, args.hidden_size))
         self.ln2 = nn.LayerNorm(args.hidden_size)
 
     def forward(self, c, h):
-        x = torch.cat((h,c), -1)
+        c_att = c.reshape(c.shape[0], 1, c.shape[1])
+        h_att = h.reshape(h.shape[0], 1, h.shape[1])
+        x = torch.cat((h_att,c_att), 1)
         h = self.ln1(h + self.attention(x, x, x))
         h = self.ln2(h + self.active_func(self.hidden_head(h)))
         return h
 
 class Attention(nn.Module):
-        def __init__(self, num_heads, emb, active_func, gain, dropout=0.1, hidden_size=None):
-            super(SelfAttention, self).__init__()
-            self.num_heads = num_heads
+        def __init__(self, transformer_heads, emb, active_func, gain, args, dropout=0.1, hidden_size=None):
+            super(Attention, self).__init__()
+            self.args = args
+            self.transformer_heads = transformer_heads
             self.norm_factor = 1 / np.sqrt(emb)
 
             init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][args.use_orthogonal]
             def init_(m):
                 return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
-            self.toK = init_(nn.Linear(emb, emb*self.num_heads))
-            self.toQ = init_(nn.Linear(emb, emb*self.num_heads))
-            self.toV = init_(nn.Linear(emb, emb*self.num_heads))
+            self.toK = init_(nn.Linear(emb, emb*self.transformer_heads))
+            self.toQ = init_(nn.Linear(emb, emb*self.transformer_heads))
+            self.toV = init_(nn.Linear(emb, emb*self.transformer_heads))
 
             if hidden_size is None:
                 hidden_size = emb
-            self.unifyheads = init_(nn.Linear(emb * self.num_heads, hidden_size))
+            self.unifyheads = init_(nn.Linear(emb * self.transformer_heads, hidden_size))
 
             self.active_func = active_func
             self.dropout = nn.Dropout(dropout)
 
         def forward(self, Q, K, V, mask=None, is_comm=False):
-            b, t, e = x.shape   # batch size (number of agents), number or comms / steps, embedding size
-            h = self.num_heads
+            b, t, e = Q.shape   # batch size (number of agents), number or comms / steps, embedding size
+            h = self.transformer_heads
             Q = self.toQ(Q).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
             K = self.toK(K).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
             V = self.toV(V).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
@@ -89,3 +96,28 @@ class Attention(nn.Module):
             out = self.active_func(out)
             out = self.dropout(out)
             return out
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, dim, nagents, max_len=1000, device='cpu', dropout=0):
+        super(PositionalEncoding, self).__init__()
+        """
+        Inputs:
+          dim: feature dimension of the positional encoding
+        """
+        self.tpdv = dict(dtype=torch.float32, device=device)
+        self.P = torch.zeros((max_len, dim), device=device).to(**self.tpdv)
+        X = torch.arange(0,max_len, device=device).reshape(-1,1) /\
+            torch.pow(10000, torch.arange(0,dim,2,dtype=torch.float32, device=device) / dim)
+        X = X.to(**self.tpdv)
+        self.P[:,0::2] = torch.sin(X)
+        self.P[:,1::2] = torch.cos(X)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, X):
+        """
+        Inputs:
+            X: tensor of size (N, T, D_in)
+        Output:
+            Y: tensor of the same size of X
+        """
+        return self.dropout(X + self.P[:X.shape[1],:].requires_grad_(False))
