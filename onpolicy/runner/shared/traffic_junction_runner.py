@@ -109,29 +109,49 @@ class TrafficJunctionRunner(Runner):
     def collect(self, step):
         # TODO: add transformer buffer states
         self.trainer.prep_rollout()
-        value, action, action_log_prob, rnn_state, rnn_state_critic \
-            = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
-                                            np.concatenate(self.buffer.obs[step]),
-                                            np.concatenate(self.buffer.rnn_states[step]),
-                                            np.concatenate(self.buffer.rnn_states_critic[step]),
-                                            np.concatenate(self.buffer.masks[step]),
-                                            np.concatenate(self.buffer.available_actions[step]))
+        if self.all_args.use_transformer_policy:
+            value, action, action_log_prob, seq_state, seq_state_critic \
+                = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
+                                                np.concatenate(self.buffer.obs[step]),
+                                                np.concatenate(self.buffer.seq_states[step]),
+                                                np.concatenate(self.buffer.seq_states_critic[step]),
+                                                np.concatenate(self.buffer.masks[step]),
+                                                np.concatenate(self.buffer.available_actions[step]))
+            seq_states = np.array(np.split(_t2n(seq_state), self.n_rollout_threads))
+            seq_states_critic = np.array(np.split(_t2n(seq_state_critic), self.n_rollout_threads))
+        else:
+            value, action, action_log_prob, rnn_state, rnn_state_critic \
+                = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
+                                                np.concatenate(self.buffer.obs[step]),
+                                                np.concatenate(self.buffer.rnn_states[step]),
+                                                np.concatenate(self.buffer.rnn_states_critic[step]),
+                                                np.concatenate(self.buffer.masks[step]),
+                                                np.concatenate(self.buffer.available_actions[step]))
+            rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads))
+            rnn_states_critic = np.array(np.split(_t2n(rnn_state_critic), self.n_rollout_threads))
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
         action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))
-        rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads))
-        rnn_states_critic = np.array(np.split(_t2n(rnn_state_critic), self.n_rollout_threads))
-
+        if self.all_args.use_transformer_policy:
+            return values, actions, action_log_probs, seq_states, seq_states_critic
         return values, actions, action_log_probs, rnn_states, rnn_states_critic
 
     def insert(self, data):
-        obs, share_obs, rewards, dones, infos, available_actions, \
-        values, actions, action_log_probs, rnn_states, rnn_states_critic = data
+        if self.all_args.use_transformer_policy:
+            obs, share_obs, rewards, dones, infos, available_actions, \
+            values, actions, action_log_probs, seq_states, seq_states_critic = data
+        else:
+            obs, share_obs, rewards, dones, infos, available_actions, \
+            values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
         dones_env = np.all(dones, axis=1)
-        rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
+        if self.all_args.use_transformer_policy:
+            seq_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.all_args.data_chunk_length, self.hidden_size), dtype=np.float32)
+            seq_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.seq_states_critic.shape[3:]), dtype=np.float32)
+        else:
+            rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
 
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
@@ -145,9 +165,14 @@ class TrafficJunctionRunner(Runner):
         if not self.use_centralized_V:
             share_obs = obs
 
-        self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic,
-                           actions, action_log_probs, values, rewards, masks,
-                           bad_masks, active_masks, available_actions)
+        if self.all_args.use_transformer_policy:
+            self.buffer.insert(share_obs, obs, seq_states, seq_states_critic,
+                               actions, action_log_probs, values, rewards, masks,
+                               bad_masks, active_masks, available_actions)
+        else:
+            self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic,
+                               actions, action_log_probs, values, rewards, masks,
+                               bad_masks, active_masks, available_actions)
 
     def log_train(self, train_infos, total_num_steps):
         train_infos["average_step_rewards"] = np.mean(self.buffer.rewards)

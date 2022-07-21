@@ -158,7 +158,7 @@ def get_config():
 
     # prepare parameters
     parser.add_argument("--algorithm_name", type=str,
-                        default='mappo', choices=["rmappo", "mappo"])
+                        default='mappo', choices=["r_mappo_comm", "t_mappo_comm"])
 
     parser.add_argument("--experiment_name", type=str, default="check", help="an identifier to distinguish different experiment.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
@@ -226,6 +226,8 @@ def get_config():
     parser.add_argument("--transformer_heads", type=int, default=1, help="The number of attention heads.")
     parser.add_argument("--mha_comm", action='store_false',
         default=True, help='use a multi-headed attention when receiving communication')
+    parser.add_argument("--comm_rounds", type=int, default=1, help="The number of communication rounds.")
+
 
     # optimizer parameters
     parser.add_argument("--lr", type=float, default=5e-4,
