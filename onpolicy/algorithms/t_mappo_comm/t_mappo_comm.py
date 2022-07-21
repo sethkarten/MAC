@@ -105,14 +105,12 @@ class T_MAPPO_COMM():
         share_obs_batch, obs_batch, seq_states_batch, seq_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
         adv_targ, available_actions_batch = sample
-
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
-        print("ppo update",share_obs_batch.shape, obs_batch.shape)
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy, ae_loss = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch,
@@ -200,7 +198,7 @@ class T_MAPPO_COMM():
             elif self._use_naive_recurrent:
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
             elif self._use_transformer_policy:
-                data_generator = buffer.transformer_generator(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.transformer_generator(advantages, self.num_mini_batch)
             else:
                 data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
 

@@ -18,7 +18,7 @@ class MAC_T_Actor(nn.Module):
     :param action_space: (gym.Space) action space.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self, args, obs_space, action_space, device=torch.device("cpu")):
+    def __init__(self, args, obs_space, action_space, cent_obs_space, device=torch.device("cpu")):
         super(MAC_T_Actor, self).__init__()
         self.hidden_size = args.hidden_size
 
@@ -35,6 +35,7 @@ class MAC_T_Actor(nn.Module):
         self.args = args
 
         obs_shape = get_shape_from_obs_space(obs_space)
+        cent_obs_shape = get_shape_from_obs_space(cent_obs_space) # for autoencoder loss only
         # embed input state
         self.embed = MLPBase(args, obs_shape)
 
@@ -47,7 +48,7 @@ class MAC_T_Actor(nn.Module):
         self.action_head = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         # autoencoder
-        self.decode_head = nn.Linear(self.hidden_size, obs_shape[0])
+        self.decode_head = nn.Linear(self.hidden_size, cent_obs_shape[0])
 
         self.to(device)
 
@@ -75,7 +76,6 @@ class MAC_T_Actor(nn.Module):
         actor_features = self.embed(obs)
         seq_states[:, -1] = actor_features.clone()  # add embedded obs
         actor_features = self.encoder(seq_states)
-        print("forward", actor_features.shape, seq_states.shape)
         # repeat for R communication rounds (multi-round comm)
         c = actor_features
         for i in range(self.args.comm_rounds):
@@ -86,7 +86,7 @@ class MAC_T_Actor(nn.Module):
         actions, action_log_probs = self.action_head(actor_features, available_actions, deterministic)
         return actions, action_log_probs, seq_states
 
-    def evaluate_actions(self, obs, seq_states, action, masks, available_actions=None, active_masks=None):
+    def evaluate_actions(self, obs, cent_obs, seq_states, action, masks, available_actions=None, active_masks=None):
         """
         Compute log probability and entropy of given actions.
         :param obs: (torch.Tensor) observation inputs into network.
@@ -103,7 +103,6 @@ class MAC_T_Actor(nn.Module):
         obs = check(obs).to(**self.tpdv)
         # seq_states[:, :-1] = seq_states[:, 1:]      # update buffer for new autoregressive observation
         seq_states = check(seq_states).to(**self.tpdv)
-        print(seq_states.shape)
         action = check(action).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
@@ -112,22 +111,23 @@ class MAC_T_Actor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
-        print(available_actions.shape)
         # actor_features = self.embed(obs)
         actor_features = self.encoder(seq_states)
-        print("eval_act", obs.shape, actor_features.shape, seq_states.shape)
         # repeat for R communication rounds (multi-round comm)
         c = actor_features
         for i in range(self.args.comm_rounds):
             c = self.communicate(c)
         actor_features = self.decoder(c, actor_features)
 
+        ae_decoded = self.decode_head(actor_features)
         action_log_probs, dist_entropy = self.action_head.evaluate_actions(actor_features,
                                                                    action, available_actions,
                                                                    active_masks=
                                                                    active_masks if self._use_policy_active_masks
                                                                    else None)
-        ae_loss = nn.functional.mse_loss(decoded, obs)
+        # calculate autoencoder state loss
+        cent_obs = check(cent_obs).to(**self.tpdv)
+        ae_loss = torch.nn.functional.mse_loss(ae_decoded, cent_obs)
         return action_log_probs, dist_entropy, ae_loss
 
 

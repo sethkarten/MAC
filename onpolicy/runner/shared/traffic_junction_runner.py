@@ -30,7 +30,6 @@ class TrafficJunctionRunner(Runner):
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic = self.collect(step)
-
                 # Obser reward and next obs
                 obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(actions)
                 data = obs, share_obs, rewards, dones, infos, available_actions, \
@@ -109,6 +108,7 @@ class TrafficJunctionRunner(Runner):
     def collect(self, step):
         # TODO: add transformer buffer states
         self.trainer.prep_rollout()
+        # print('collect', self.buffer.share_obs[step].shape)
         if self.all_args.use_transformer_policy:
             value, action, action_log_prob, seq_state, seq_state_critic \
                 = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
@@ -147,7 +147,7 @@ class TrafficJunctionRunner(Runner):
 
         dones_env = np.all(dones, axis=1)
         if self.all_args.use_transformer_policy:
-            seq_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.all_args.data_chunk_length, self.hidden_size), dtype=np.float32)
+            seq_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.seq_states.shape[3:]), dtype=np.float32)
             seq_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.seq_states_critic.shape[3:]), dtype=np.float32)
         else:
             rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
