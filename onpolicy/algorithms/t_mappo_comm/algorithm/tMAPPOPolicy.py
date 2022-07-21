@@ -25,7 +25,7 @@ class T_MAPPOPolicy:
         self.share_obs_space = cent_obs_space
         self.act_space = act_space
 
-        self.actor = MAC_T_Actor(args, self.obs_space, self.act_space, self.device)
+        self.actor = MAC_T_Actor(args, self.obs_space, self.act_space, self.share_obs_space, self.device)
         print(self.actor)
         self.critic = T_Critic(args, self.share_obs_space, self.device)
 
@@ -105,12 +105,12 @@ class T_MAPPOPolicy:
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         action_log_probs, dist_entropy, ae_loss = self.actor.evaluate_actions(obs,
+                                                                     cent_obs,
                                                                      seq_states_actor,
                                                                      action,
                                                                      masks,
                                                                      available_actions,
                                                                      active_masks)
-
         values, _ = self.critic(cent_obs, seq_states_critic, masks)
         return values, action_log_probs, dist_entropy, ae_loss
 
