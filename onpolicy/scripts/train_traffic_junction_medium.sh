@@ -1,6 +1,6 @@
 #!/bin/sh
 env="TrafficJunction"
-algo="rmappo"
+algo="t_mappo_comm"
 difficulty="medium"
 num_agents=10
 episode_length=40
@@ -11,7 +11,7 @@ echo "env is ${env}, map is ${map}, algo is ${algo}, exp is ${exp}, max seed is 
 for seed in `seq ${seed_max}`;
 do
     echo "seed is ${seed}:"
-    CUDA_VISIBLE_DEVICES=1 python train/train_traffic_junction.py --env_name ${env} \
+    python train/train_traffic_junction.py --env_name ${env} \
     --algorithm_name ${algo} --experiment_name ${exp} --difficulty ${difficulty} \
     --num_agents ${num_agents} --seed ${seed} --episode_length ${episode_length} \
     --n_training_threads 32 --n_rollout_threads 16 --num_mini_batch 1 \

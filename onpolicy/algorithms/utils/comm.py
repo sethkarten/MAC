@@ -5,6 +5,10 @@ import numpy as np
 from .util import init
 from onpolicy.algorithms.utils.transformer import Attention
 # import gumbel softmax
+
+def _t2n(x):
+    return x.detach().cpu().numpy()
+
 class MAC(nn.Module):
     """
     Multi-Agent Communication Module.
@@ -35,7 +39,7 @@ class MAC(nn.Module):
             self.comm_mask = torch.zeros(self.num_agents, self.num_agents).to(**self.tpdv)
         else:
             # this just prohibits self communication
-            self.comm_mask = torch.ones(self.num_agents, self.num_agents) \
+            self.comm_mask = torch.ones(self.num_agents, self.num_agents).to(**self.tpdv) \
                             - torch.eye(self.num_agents, self.num_agents).to(**self.tpdv)
 
         if self.mha_comm:
@@ -57,7 +61,7 @@ class MAC(nn.Module):
             comm = comm.view(self.b, self.num_agents, self.num_agents, self.comm_dim).transpose(2,1)
             comm = comm.reshape(self.b * self.num_agents, self.num_agents, self.comm_dim)
             comm_mask = comm_mask.reshape(self.b * self.num_agents, self.num_agents, 1)
-            comm = self.comm_self_att(comm, comm, comm, mask=comm_mask, is_comm=True)
+            comm = self.comm_self_att(comm, comm, comm, mask=None, is_comm=True)
         else:
             comm_sum = comm.sum(dim=1)
             comm = comm_sum.reshape(self.b * self.num_agents, self.comm_dim)
@@ -77,7 +81,7 @@ class MAC(nn.Module):
         # gating sparsity mask
         agent_mask, comm_action, comm_prob = self.get_gating_mask(comm, agent_mask)
         if info != None:
-            info['comm_action'] = comm_action.detach().numpy()
+            info['comm_action'] = _t2n(comm_action)
 
         # Mask 1) input communication 2) Mask communcation from dead agents, 3) communication to dead agents
         comm_out_mask = mask * agent_mask * agent_mask.transpose(1, 2)
@@ -86,7 +90,7 @@ class MAC(nn.Module):
         # doing cts communication vectors only right now
         comm  = comm.view(self.b, n, self.comm_dim)
         comm = comm.unsqueeze(-2).expand(self.b, n, n, self.comm_dim)
-        comm = comm * comm_out_mask.reshape(self.b, n, n, 1)
+        comm = comm #* comm_out_mask.reshape(self.b, n, n, 1)
 
         if not self.mha_comm:
             if self.comm_mode == 'avg' \

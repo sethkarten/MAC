@@ -12,7 +12,7 @@ class TransformerEncoder(nn.Module):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
         # positional encoding
-        self.pe = PositionalEncoding(args.hidden_size, args.num_agents, args.data_chunk_length, dropout=0)
+        self.pe = PositionalEncoding(args.hidden_size, args.num_agents, args.data_chunk_length, dropout=0, device=device)
 
         self.attention = Attention(args.transformer_heads, args.hidden_size, active_func, gain, args, dropout=0)
         self.hidden_head = init_(nn.Linear(args.hidden_size, args.hidden_size))
