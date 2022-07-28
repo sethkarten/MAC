@@ -34,16 +34,19 @@ class TransformerDecoder(nn.Module):
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
-        self.attention = Attention(args.transformer_heads, args.hidden_size, active_func, gain, args, dropout=0, hidden_size=args.hidden_size)
+        # self.attention = Attention(args.transformer_heads, args.hidden_size, active_func, gain, args, dropout=0, hidden_size=args.hidden_size)
+        self.mlp = init_(nn.Linear(2*args.hidden_size, args.hidden_size))
         self.ln1 = nn.LayerNorm(args.hidden_size)
         self.hidden_head = init_(nn.Linear(args.hidden_size, args.hidden_size))
         self.ln2 = nn.LayerNorm(args.hidden_size)
 
     def forward(self, c, h):
-        c_att = c.reshape(c.shape[0], 1, c.shape[1])
-        h_att = h.reshape(h.shape[0], 1, h.shape[1])
-        x = torch.cat((h_att,c_att), 1)
-        h = self.ln1(h + self.attention(x, x, x))
+        # c_att = c.reshape(c.shape[0], 1, c.shape[1])
+        # h_att = h.reshape(h.shape[0], 1, h.shape[1])
+        # x = torch.cat((h_att,c_att), -1)
+        # h = self.ln1(h + self.attention(x, x, x))
+        x = torch.cat((h,c), -1)
+        h = self.ln1(h + self.active_func(self.mlp(x)))
         h = self.ln2(h + self.active_func(self.hidden_head(h)))
         return h
 

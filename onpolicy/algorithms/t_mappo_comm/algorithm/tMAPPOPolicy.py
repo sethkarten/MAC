@@ -27,7 +27,7 @@ class T_MAPPOPolicy:
 
         self.actor = MAC_T_Actor(args, self.obs_space, self.act_space, self.share_obs_space, self.device)
         print(self.actor)
-        self.critic = T_Critic(args, self.share_obs_space, self.device)
+        self.critic = T_Critic(args, self.obs_space, self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.lr, eps=self.opti_eps,
@@ -71,7 +71,7 @@ class T_MAPPOPolicy:
                                                                  available_actions,
                                                                  deterministic)
 
-        values, seq_states_critic = self.critic(cent_obs, seq_states_critic, masks)
+        values, seq_states_critic = self.critic(obs, seq_states_critic, masks)
         return values, actions, action_log_probs, seq_states_actor, seq_states_critic
 
     def get_values(self, cent_obs, seq_states_critic, masks):
@@ -111,7 +111,7 @@ class T_MAPPOPolicy:
                                                                      masks,
                                                                      available_actions,
                                                                      active_masks)
-        values, _ = self.critic(cent_obs, seq_states_critic, masks)
+        values, _ = self.critic(obs, seq_states_critic, masks)
         return values, action_log_probs, dist_entropy, ae_loss
 
     def act(self, obs, seq_states_actor, masks, available_actions=None, deterministic=False):

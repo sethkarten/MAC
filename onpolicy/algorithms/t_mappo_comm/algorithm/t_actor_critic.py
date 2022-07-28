@@ -191,11 +191,11 @@ class T_Critic(nn.Module):
         seq_states[:, -1] = critic_features.clone()  # add embedded obs
         critic_features = self.encoder(seq_states)
         # repeat for R communication rounds (multi-round comm)
-        # c = critic_features
-        # for i in range(self.args.comm_rounds):
-        #     c = self.communicate(c)
-        # critic_features = self.decoder(c, critic_features)
-        # seq_states[:, -1] = critic_features.clone()  # update for embedded obs + comm
+        c = critic_features
+        for i in range(self.args.comm_rounds):
+            c = self.communicate(c)
+        critic_features = self.decoder(c, critic_features)
+        seq_states[:, -1] = critic_features.clone()  # update for embedded obs + comm
 
         values = self.v_out(critic_features)
 

@@ -69,6 +69,9 @@ class Runner(object):
         elif self.all_args.algorithm_name == 't_mappo_comm':
             from onpolicy.algorithms.t_mappo_comm.t_mappo_comm import T_MAPPO_COMM as TrainAlgo
             from onpolicy.algorithms.t_mappo_comm.algorithm.tMAPPOPolicy import T_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == 'r_mappo':
+            from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
+            from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
         # print(share_observation_space)
@@ -119,11 +122,11 @@ class Runner(object):
         """Calculate returns for the collected data."""
         self.trainer.prep_rollout()
         if self.all_args.use_transformer_policy:
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
+            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.obs[-1]),
                                                     np.concatenate(self.buffer.seq_states_critic[-1]),
                                                     np.concatenate(self.buffer.masks[-1]))
         else:
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
+            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.obs[-1]),
                                                     np.concatenate(self.buffer.rnn_states_critic[-1]),
                                                     np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))

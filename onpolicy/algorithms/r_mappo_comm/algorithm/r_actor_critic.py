@@ -5,7 +5,6 @@ from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.mlp import MLPBase
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
-from onpolicy.algorithms.utils.attention import SelfAttention
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.comm import MAC
@@ -23,6 +22,7 @@ class MAC_R_Actor(nn.Module):
         self.hidden_size = args.hidden_size
 
         self._gain = args.gain
+        self._active_func = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
         self._use_orthogonal = args.use_orthogonal
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
@@ -34,15 +34,14 @@ class MAC_R_Actor(nn.Module):
         self.args = args
 
         obs_shape = get_shape_from_obs_space(obs_space)
-        # base = CNNBase if len(obs_shape) == 3 else MLPBase
-        # self.base = base(args, obs_shape)
-        self.base = nn.Linear(obs_shape[0], self.hidden_size)
+        base = CNNBase if len(obs_shape) == 3 else MLPBase
+        self.base = base(args, obs_shape)
+        # self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
-        print(self._use_recurrent_policy)
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
-        self.communicate = MAC(args, device)
+        self.communicate = MAC(args, self._active_func, self._gain, device)
 
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
@@ -73,9 +72,6 @@ class MAC_R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         actor_features = self.base(obs)
-
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         # communicate
         actor_features = self.communicate(actor_features)
@@ -113,9 +109,6 @@ class MAC_R_Actor(nn.Module):
 
         actor_features = self.base(obs)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
-
         # communicate
         actor_features = self.communicate(actor_features)
         decoded = self.decode(actor_features)
@@ -142,6 +135,9 @@ class R_Critic(nn.Module):
     def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
         super(R_Critic, self).__init__()
         self.hidden_size = args.hidden_size
+
+        self._gain = args.gain
+        self._active_func = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
         self._use_orthogonal = args.use_orthogonal
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
@@ -151,14 +147,14 @@ class R_Critic(nn.Module):
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
-        # base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
-        # self.base = base(args, cent_obs_shape)
-        self.base = nn.Linear(cent_obs_shape[0], self.hidden_size)
+        base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
+        self.base = base(args, cent_obs_shape)
+        # self.base = nn.Linear(cent_obs_shape[0], self.hidden_size)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
-        # self.communicate = MAC(args, device)
+        self.communicate = MAC(args, self._active_func, self._gain, device)
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
@@ -185,13 +181,11 @@ class R_Critic(nn.Module):
         masks = check(masks).to(**self.tpdv)
 
         critic_features = self.base(cent_obs)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         # communicate
-        # critic_features = self.communicate(critic_features)
-        # if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-        #     critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+        critic_features = self.communicate(critic_features)
+        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
+            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         values = self.v_out(critic_features)
 
