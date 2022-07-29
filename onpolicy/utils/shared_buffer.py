@@ -64,8 +64,12 @@ class SharedReplayBuffer(object):
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
                                              dtype=np.float32)
+            self.rr_available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
+                                             dtype=np.float32)
+
         else:
             self.available_actions = None
+            self.rr_available_actions = None
 
         act_shape = get_shape_from_act_space(act_space)
 
@@ -80,18 +84,18 @@ class SharedReplayBuffer(object):
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
 
-        self.data_rand_rollout_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
-                                num_agents, self.args.lookahead, *obs_shape), dtype=np.float32)
-        self.data_rand_rollout_share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
-                                        num_agents, self.args.lookahead, *share_obs_shape), dtype=np.float32)
-        self.data_rand_rollout_masks = np.ones((self.episode_length + 1, self.n_rollout_threads,
-                                    num_agents, self.args.lookahead, 1), dtype=np.float32)
+        self.rr_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
+                                num_agents, *obs_shape), dtype=np.float32)
+        self.rr_share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
+                                        num_agents, *share_obs_shape), dtype=np.float32)
+        self.rr_masks = np.ones((self.episode_length + 1, self.n_rollout_threads,
+                                    num_agents, 1), dtype=np.float32)
 
-        self.dfr_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
+        self.fr_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
                                 num_agents, self.args.lookahead, *obs_shape), dtype=np.float32)
-        self.dfr_share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
+        self.fr_share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads,
                                         num_agents, self.args.lookahead, *share_obs_shape), dtype=np.float32)
-        self.dfr_mask = np.ones((self.episode_length + 1, self.n_rollout_threads,
+        self.fr_masks = np.ones((self.episode_length + 1, self.n_rollout_threads,
                                     num_agents, self.args.lookahead, 1), dtype=np.float32)
 
         self.step = 0
@@ -99,7 +103,7 @@ class SharedReplayBuffer(object):
     def insert(self, share_obs, obs, states_actor, states_critic,
                actions, action_log_probs, value_preds, rewards, masks,
                bad_masks=None, active_masks=None, available_actions=None,
-               _drr_obs=None, _drr_share_obs=None, _drr_masks=None):
+               _rr_obs=None, _rr_share_obs=None, _rr_masks=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -137,10 +141,10 @@ class SharedReplayBuffer(object):
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
 
-        if _drr_obs is not None:
-            self.data_rand_rollout_obs[self.step] = _drr_obs.copy().transpose((1,2,0,3))
-            self.data_rand_rollout_share_obs[self.step] = _drr_share_obs.copy().transpose((1,2,0,3))
-            self.data_rand_rollout_masks[self.step] = _drr_masks.copy().transpose((1,2,0,3))
+        if _rr_obs is not None:
+            self.rr_obs[self.step] = _rr_obs.copy()
+            self.rr_share_obs[self.step] = _rr_share_obs.copy()
+            self.rr_masks[self.step] = _rr_masks.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
@@ -194,6 +198,10 @@ class SharedReplayBuffer(object):
         self.active_masks[0] = self.active_masks[-1].copy()
         if self.available_actions is not None:
             self.available_actions[0] = self.available_actions[-1].copy()
+        if self.args.contrastive:
+            self.rr_obs[0] = self.rr_obs[-1].copy()
+            self.rr_share_obs[0] = self.rr_share_obs[-1].copy()
+            self.rr_masks[0] = self.rr_masks[-1].copy()
 
     def chooseafter_update(self):
         """Copy last timestep data to first index. This method is used for Hanabi."""
@@ -554,10 +562,30 @@ class SharedReplayBuffer(object):
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
         # contrastive future states
-        for i in range(self.episode_length + 1 - self.args.lookahead):
-            self.dfr_share_obs[i] = self.share_obs[i:i+self.args.lookahead].copy().transpose((1,2,0,3))
-            self.dfr_obs[i] = self.obs[i:i+self.args.lookahead].copy().transpose((1,2,0,3))
-            self.dfr_mask[i] = self.masks[i:i+self.args.lookahead].copy().transpose((1,2,0,3))
+        rr_masks = self.rr_masks.sum(-1)
+        print(rr_masks)
+        print(self.rr_masks.shape)
+        print(rr_masks.shape)
+        rr_indices = np.random.randint(0, np.maximum(1, rr_masks)).reshape(-1)
+        rr_indices = tuple(np.stack((np.arange(len(rr_indices)), rr_indices), 1).T)
+        rr_obs = np.zeros_like(self.obs)
+        rr_share_obs = np.zeros_like(self.share_obs)
+        rr_obs = self.rr_obs[indices]
+        rr_share_obs = self.rr_share_obs[indices]
+
+        fr_masks = self.fr_masks.sum(-1)
+        fr_indices = np.random.randint(0, fr_masks).reshape(-1)
+        fr_indices = tuple(np.stack((np.arange(len(fr_indices)), fr_indices), 1).T)
+        fr_obs = np.zeros_like(self.obs)
+        fr_share_obs = np.zeros_like(self.share_obs)
+        fr_obs = self.rr_obs[indices]
+        fr_share_obs = self.rr_share_obs[indices]
+
+        rr_share_obs = rr_share_obs[:-1].reshape(-1, *rr_share_obs.shape[3:])
+        rr_obs = rr_obs[:-1].reshape(-1, *rr_obs.shape[3:])
+
+        fr_share_obs = fr_share_obs[:-1].reshape(-1, *fr_share_obs.shape[3:])
+        fr_obs = fr_obs[:-1].reshape(-1, *fr_obs.shape[3:])
 
         share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[3:])
         obs = self.obs[:-1].reshape(-1, *self.obs.shape[3:])
@@ -572,14 +600,6 @@ class SharedReplayBuffer(object):
         active_masks = self.active_masks[:-1].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
         advantages = advantages.reshape(-1, 1)
-
-        drr_share_obs = self.data_rand_rollout_share_obs[:-1].reshape(-1, *self.data_rand_rollout_share_obs.shape[3:])
-        drr_obs = self.data_rand_rollout_obs[:-1].reshape(-1, *self.data_rand_rollout_obs.shape[3:])
-        drr_masks = self.data_rand_rollout_masks[:-1].reshape(-1, self.args.lookahead, 1)
-
-        dfr_share_obs = self.dfr_share_obs[:-1].reshape(-1, *self.dfr_share_obs.shape[3:])
-        dfr_obs = self.dfr_obs[:-1].reshape(-1, *self.dfr_obs.shape[3:])
-        dfr_masks = self.dfr_mask[:-1].reshape(-1, self.args.lookahead, 1)
 
         for indices in sampler:
             # obs size [T+1 N M Dim]-->[T N M Dim]-->[T*N*M,Dim]-->[index,Dim]
@@ -603,17 +623,15 @@ class SharedReplayBuffer(object):
                 adv_targ = advantages[indices]
 
             # contrastive rollout - random
-            drr_share_obs_batch = drr_share_obs[indices]
-            drr_obs_batch = drr_obs[indices]
-            drr_masks_batch = drr_masks[indices]
-            drr = (drr_obs_batch, drr_share_obs_batch, drr_masks_batch)
+            rr_share_obs_batch = rr_share_obs[indices]
+            rr_obs_batch = rr_obs[indices]
+            rr = (rr_obs_batch, rr_share_obs_batch)
             # contrastive rollout - future
-            # if drr_obs_batch is not None:
-            dfr_share_obs_batch = dfr_share_obs[indices]
-            dfr_obs_batch = dfr_obs[indices]
-            dfr_masks_batch = dfr_masks[indices]
-            dfr = (dfr_obs_batch, dfr_share_obs_batch, dfr_masks_batch)
+            # if rr_obs_batch is not None:
+            fr_share_obs_batch = fr_share_obs[indices]
+            fr_obs_batch = fr_obs[indices]
+            fr = (fr_obs_batch, fr_share_obs_batch)
 
             yield share_obs_batch, obs_batch, seq_states_batch, seq_states_critic_batch, actions_batch,\
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
-                  adv_targ, available_actions_batch, drr, dfr
+                  adv_targ, available_actions_batch, rr, fr

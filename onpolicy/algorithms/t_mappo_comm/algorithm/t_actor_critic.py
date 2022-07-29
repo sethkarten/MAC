@@ -143,18 +143,18 @@ class MAC_T_Actor(nn.Module):
         cent_obs = check(cent_obs).to(**self.tpdv)
         ae_loss = torch.nn.functional.mse_loss(ae_decoded, cent_obs)
 
-        contrast_rand_loss, contrast_future_loss = 0, 0
+        contrast_rand_loss, contrast_future_loss = torch.tensor(0).to(**self.tpdv), torch.tensor(0).to(**self.tpdv)
         if self.args.contrastive:
             # contrastive loss - random
-            drr_obs, drr_share_obs, drr_masks = drr
+            drr_obs, drr_share_obs = drr
             # choose rollout index
-            drr_masks = drr_masks.sum(1)
-            indices = np.random.randint(0, drr_masks).reshape(-1)
-            indices = tuple(np.stack((np.arange(len(indices)), indices), 1).T)
+            # drr_masks = drr_masks.sum(1)
+            # indices = np.random.randint(0, drr_masks).reshape(-1)
+            # indices = tuple(np.stack((np.arange(len(indices)), indices), 1).T)
             if self.args.contrastive_share:
-                obs = check(drr_share_obs[indices]).to(**self.tpdv)
+                obs = check(drr_share_obs).to(**self.tpdv)
             else:
-                obs = check(drr_obs[indices]).to(**self.tpdv)
+                obs = check(drr_obs).to(**self.tpdv)
             rr_features = self.embed(obs)
             # rr_features = self._active_func(self.embed(obs))
             sim = nn.functional.cosine_similarity(internal_state, rr_features) # map to [-1,1]
@@ -162,15 +162,15 @@ class MAC_T_Actor(nn.Module):
             # print('-', cos_sim.mean())
             contrast_rand_loss -= (1-torch.sigmoid(sim)).log().mean()
             # contrastive loss - future
-            dfr_obs, dfr_share_obs, dfr_masks = dfr
+            dfr_obs, dfr_share_obs = dfr
             # choose rollout index
-            dfr_masks = dfr_masks.sum(1)
-            indices = np.random.randint(0, dfr_masks).reshape(-1)
-            indices = tuple(np.stack((np.arange(len(indices)), indices), 1).T)
+            # dfr_masks = dfr_masks.sum(1)
+            # indices = np.random.randint(0, dfr_masks).reshape(-1)
+            # indices = tuple(np.stack((np.arange(len(indices)), indices), 1).T)
             if self.args.contrastive_share:
-                obs = check(dfr_share_obs[indices]).to(**self.tpdv)
+                obs = check(dfr_share_obs).to(**self.tpdv)
             else:
-                obs = check(dfr_obs[indices]).to(**self.tpdv)
+                obs = check(dfr_obs).to(**self.tpdv)
             fr_features = self.embed(obs)
             sim = nn.functional.cosine_similarity(internal_state, fr_features) # map to [-1,1]
             # sim = internal_state @ fr_features.T # map to [-1,1]
