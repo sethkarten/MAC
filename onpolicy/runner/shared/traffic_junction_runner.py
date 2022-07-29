@@ -25,6 +25,8 @@ class TrafficJunctionRunner(Runner):
 
         success = np.zeros(self.n_rollout_threads)
         success_eps = 0
+        if self.all_args.contrastive:
+            rr_available_actions = self.buffer.rr_available_actions[0]
         for episode in range(episodes):
             if self.use_linear_lr_decay:
                 self.trainer.policy.lr_decay(episode, episodes)
@@ -35,10 +37,19 @@ class TrafficJunctionRunner(Runner):
                 # Obser reward and next obs
                 obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(actions)
                 if self.all_args.contrastive:
-                    if step+1 < self.episode_length - self.all_args.lookahead:
-                        data_rand_rollout = self.rand_rollout(available_actions, actions, step)
-                    else:
-                        data_rand_rollout = (None, None, None)
+                    rr_available_actions = rr_available_actions.sum(-1)
+                    rr_available_actions = rr_available_actions.reshape(self.all_args.n_rollout_threads*self.num_agents)
+                    rr_actions = np.random.randint(np.zeros_like(rr_available_actions), rr_available_actions)
+                    rr_actions = rr_actions.reshape(self.all_args.n_rollout_threads, self.num_agents, 1)
+                    rr_obs, rr_share_obs, rr_rewards, rr_dones, rr_infos, rr_available_actions = self.envs_contrastive.step(rr_actions)
+                    rr_dones_env = np.all(rr_dones, axis=1)
+                    rr_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+                    rr_masks[rr_dones_env == True] = np.zeros(((rr_dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
+                    data_rand_rollout = (rr_obs, rr_share_obs, rr_masks)
+                    # if step+1 < self.episode_length - self.all_args.lookahead:
+                    #     data_rand_rollout = self.rand_rollout(available_actions, actions, step)
+                    # else:
+                    #     data_rand_rollout = (None, None, None)
                     data = obs, share_obs, rewards, dones, infos, available_actions, \
                            values, actions, action_log_probs, \
                            rnn_states, rnn_states_critic, data_rand_rollout
@@ -137,6 +148,15 @@ class TrafficJunctionRunner(Runner):
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
         self.buffer.available_actions[0] = available_actions.copy()
+
+        if self.all_args.contrastive:
+            rr_obs, rr_share_obs, rr_available_actions = self.envs_contrastive.reset()
+            if not self.use_centralized_V:
+                rr_share_obs = rr_obs
+            self.buffer.rr_share_obs[0] = rr_share_obs.copy()
+            self.buffer.rr_obs[0] = rr_obs.copy()
+            self.buffer.rr_available_actions[0] = rr_available_actions.copy()
+
 
     @torch.no_grad()
     def collect(self, step):

@@ -113,7 +113,7 @@ class T_MAPPOPolicy:
                                                                      available_actions,
                                                                      active_masks,
                                                                      drr,
-                                                                     dfr, step=step)
+                                                                     dfr)
         values, _ = self.critic(obs, seq_states_critic, masks)
         return values, action_log_probs, dist_entropy, ae_loss, contrast_rand_loss, contrast_future_loss
 

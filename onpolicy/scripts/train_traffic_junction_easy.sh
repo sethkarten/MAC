@@ -17,5 +17,5 @@ do
     --n_training_threads 32 --n_rollout_threads 8 --num_mini_batch 1 \
     --num_env_steps 100000 --ppo_epoch 5 --lr 1e-3 --critic_lr 1e-3 \
     --use_ReLU --gamma 1 --clip_param 0.1 \
-    --use_value_active_masks --contrastive --lookahead 2
+    --use_value_active_masks --contrastive
 done
