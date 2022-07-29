@@ -18,6 +18,7 @@ class Runner(object):
 
         self.all_args = config['all_args']
         self.envs = config['envs']
+        self.envs_contrastive = config['envs_contrastive']
         self.eval_envs = config['eval_envs']
         self.device = config['device']
         self.num_agents = config['num_agents']

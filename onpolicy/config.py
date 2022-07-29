@@ -228,6 +228,11 @@ def get_config():
         default=True, help='use a multi-headed attention when receiving communication')
     parser.add_argument("--comm_rounds", type=int, default=1, help="The number of communication rounds.")
 
+    # contrastive parameters
+    parser.add_argument("--contrastive", action='store_true', default=False, help='use a contrastive')
+    parser.add_argument("--contrastive_share", action='store_true', default=False, help='use a shared contrastive features')
+    parser.add_argument("--lookahead", type=int, default=2, help="Use contrastive data from up to this far in the future")
+
 
     # optimizer parameters
     parser.add_argument("--lr", type=float, default=5e-4,
