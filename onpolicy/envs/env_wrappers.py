@@ -292,9 +292,9 @@ class SubprocVecEnv(ShareVecEnv):
     def render(self, mode="rgb_array"):
         for remote in self.remotes:
             remote.send(('render', mode))
-        if mode == "rgb_array":   
+        if mode == "rgb_array":
             frame = [remote.recv() for remote in self.remotes]
-            return np.stack(frame) 
+            return np.stack(frame)
 
 
 def shareworker(remote, parent_remote, env_fn_wrapper):
@@ -334,6 +334,10 @@ def shareworker(remote, parent_remote, env_fn_wrapper):
         elif cmd == 'render_vulnerability':
             fr = env.render_vulnerability(data)
             remote.send((fr))
+        elif cmd == 'get':
+            remote.send((env))
+        elif cmd == 'set':
+            env = data
         else:
             raise NotImplementedError
 
@@ -382,6 +386,15 @@ class ShareSubprocVecEnv(ShareVecEnv):
         for remote in self.remotes:
             remote.send(('reset_task', None))
         return np.stack([remote.recv() for remote in self.remotes])
+
+    def get(self):
+        for remote in self.remotes:
+            remote.send(('get', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def set(self, _envs):
+        for remote, _env in zip(self.remotes, _envs):
+            remote.send(('set', _env))
 
     def close(self):
         if self.closed:
@@ -468,7 +481,7 @@ class ChooseSimpleSubprocVecEnv(ShareVecEnv):
     def render(self, mode="rgb_array"):
         for remote in self.remotes:
             remote.send(('render', mode))
-        if mode == "rgb_array":   
+        if mode == "rgb_array":
             frame = [remote.recv() for remote in self.remotes]
             return np.stack(frame)
 
@@ -738,7 +751,7 @@ class ShareDummyVecEnv(ShareVecEnv):
     def close(self):
         for env in self.envs:
             env.close()
-    
+
     def render(self, mode="human"):
         if mode == "rgb_array":
             return np.array([env.render(mode=mode) for env in self.envs])

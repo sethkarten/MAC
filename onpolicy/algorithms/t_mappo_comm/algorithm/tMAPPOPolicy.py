@@ -87,7 +87,7 @@ class T_MAPPOPolicy:
         return values
 
     def evaluate_actions(self, cent_obs, obs, seq_states_actor, seq_states_critic, action, masks,
-                         available_actions=None, active_masks=None):
+                         available_actions=None, active_masks=None, drr=None, dfr=None):
         """
         Get action logprobs / entropy and value function predictions for actor update.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -104,15 +104,18 @@ class T_MAPPOPolicy:
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
-        action_log_probs, dist_entropy, ae_loss = self.actor.evaluate_actions(obs,
+        action_log_probs, dist_entropy, ae_loss, \
+        contrast_rand_loss, contrast_future_loss = self.actor.evaluate_actions(obs,
                                                                      cent_obs,
                                                                      seq_states_actor,
                                                                      action,
                                                                      masks,
                                                                      available_actions,
-                                                                     active_masks)
+                                                                     active_masks,
+                                                                     drr,
+                                                                     dfr, step=step)
         values, _ = self.critic(obs, seq_states_critic, masks)
-        return values, action_log_probs, dist_entropy, ae_loss
+        return values, action_log_probs, dist_entropy, ae_loss, contrast_rand_loss, contrast_future_loss
 
     def act(self, obs, seq_states_actor, masks, available_actions=None, deterministic=False):
         """

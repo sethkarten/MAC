@@ -26,6 +26,7 @@ import numpy as np
 from gym import spaces
 from onpolicy.envs.traffic_junction.traffic_helper import *
 from inspect import getargspec
+from copy import deepcopy
 
 def nPr(n,r):
     f = math.factorial

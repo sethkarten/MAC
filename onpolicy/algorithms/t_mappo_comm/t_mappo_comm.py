@@ -104,7 +104,7 @@ class T_MAPPO_COMM():
         """
         share_obs_batch, obs_batch, seq_states_batch, seq_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch = sample
+        adv_targ, available_actions_batch, drr, dfr = sample
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
@@ -112,14 +112,17 @@ class T_MAPPO_COMM():
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy, ae_loss = self.policy.evaluate_actions(share_obs_batch,
+        values, action_log_probs, dist_entropy, \
+        ae_loss, contrast_rand_loss, contrast_future_loss = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch,
                                                                               seq_states_batch,
                                                                               seq_states_critic_batch,
                                                                               actions_batch,
                                                                               masks_batch,
                                                                               available_actions_batch,
-                                                                              active_masks_batch)
+                                                                              active_masks_batch,
+                                                                              drr,
+                                                                              dfr)
         # actor update
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
 
@@ -138,7 +141,7 @@ class T_MAPPO_COMM():
         self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
-            (policy_loss - dist_entropy * self.entropy_coef + ae_loss).backward()
+            (policy_loss - dist_entropy * self.entropy_coef + ae_loss + contrast_rand_loss + contrast_future_loss).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
@@ -161,7 +164,7 @@ class T_MAPPO_COMM():
 
         self.policy.critic_optimizer.step()
 
-        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss
+        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss, contrast_rand_loss, contrast_future_loss
 
     def train(self, buffer, update_actor=True):
         """
@@ -191,6 +194,8 @@ class T_MAPPO_COMM():
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
         train_info['ae_loss'] = 0
+        train_info['contrast_rand_loss'] = 0
+        train_info['contrast_future_loss'] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
@@ -204,7 +209,7 @@ class T_MAPPO_COMM():
 
             for sample in data_generator:
 
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss \
+                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss, contrast_rand_loss, contrast_future_loss \
                     = self.ppo_update(sample, update_actor)
 
                 train_info['value_loss'] += value_loss.item()
@@ -214,6 +219,8 @@ class T_MAPPO_COMM():
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += imp_weights.mean()
                 train_info['ae_loss'] += ae_loss.item()
+                train_info['contrast_rand_loss'] += contrast_rand_loss.item()
+                train_info['contrast_future_loss'] += contrast_future_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 

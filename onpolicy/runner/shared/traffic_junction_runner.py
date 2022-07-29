@@ -5,6 +5,8 @@ from functools import reduce
 import torch
 from onpolicy.runner.shared.base_runner import Runner
 from onpolicy.utils.util import set_lr
+import copy
+from onpolicy.envs.env_wrappers import ShareSubprocVecEnv, ShareDummyVecEnv
 
 def _t2n(x):
     return x.detach().cpu().numpy()
@@ -32,9 +34,18 @@ class TrafficJunctionRunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic = self.collect(step)
                 # Obser reward and next obs
                 obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(actions)
-                data = obs, share_obs, rewards, dones, infos, available_actions, \
-                       values, actions, action_log_probs, \
-                       rnn_states, rnn_states_critic
+                if self.all_args.contrastive:
+                    if step+1 < self.episode_length - self.all_args.lookahead:
+                        data_rand_rollout = self.rand_rollout(available_actions, actions, step)
+                    else:
+                        data_rand_rollout = (None, None, None)
+                    data = obs, share_obs, rewards, dones, infos, available_actions, \
+                           values, actions, action_log_probs, \
+                           rnn_states, rnn_states_critic, data_rand_rollout
+                else:
+                    data = obs, share_obs, rewards, dones, infos, available_actions, \
+                           values, actions, action_log_probs, \
+                           rnn_states, rnn_states_critic
                 for i, info in enumerate(infos):
                     success_one_ep[i] = min(success_one_ep[i], info[0]['success'])
                 # insert data into buffer
@@ -92,6 +103,29 @@ class TrafficJunctionRunner(Runner):
             if episode % self.eval_interval == 0 and self.use_eval:
                 self.eval(total_num_steps)
 
+    def rand_rollout(self, available_actions, _actions, step):
+        envs = self.envs.get()
+        self.envs_contrastive.set(envs)
+        data_rand_rollout_obs = []
+        data_rand_rollout_share_obs = []
+        data_rand_rollout_masks = []
+        for step_rand in range(step+1, min(step+1+self.all_args.lookahead, self.episode_length)):
+            available_actions = available_actions.sum(-1)
+            available_actions = available_actions.reshape(self.all_args.n_rollout_threads*self.num_agents)
+            actions_rand = np.random.randint(np.zeros_like(available_actions), available_actions)
+            actions_rand = actions_rand.reshape(self.all_args.n_rollout_threads, self.num_agents, 1)
+            obs, share_obs, rewards, dones, infos, available_actions = self.envs_contrastive.step(actions_rand)
+            dones_env = np.all(dones, axis=1)
+            masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
+            data_rand_rollout_obs.append(obs)
+            data_rand_rollout_share_obs.append(share_obs)
+            data_rand_rollout_masks.append(masks)
+        data_rand_rollout_obs = np.stack(data_rand_rollout_obs)
+        data_rand_rollout_share_obs = np.stack(data_rand_rollout_share_obs)
+        data_rand_rollout_masks = np.stack(data_rand_rollout_masks)
+        return (data_rand_rollout_obs, data_rand_rollout_share_obs, data_rand_rollout_masks)
+
     def warmup(self):
         # reset env
         obs, share_obs, available_actions = self.envs.reset()
@@ -139,11 +173,19 @@ class TrafficJunctionRunner(Runner):
 
     def insert(self, data):
         if self.all_args.use_transformer_policy:
-            obs, share_obs, rewards, dones, infos, available_actions, \
-            values, actions, action_log_probs, seq_states, seq_states_critic = data
+            if self.all_args.contrastive:
+                obs, share_obs, rewards, dones, infos, available_actions, \
+                values, actions, action_log_probs, seq_states, seq_states_critic, data_rand_rollout = data
+            else:
+                obs, share_obs, rewards, dones, infos, available_actions, \
+                values, actions, action_log_probs, seq_states, seq_states_critic = data
         else:
-            obs, share_obs, rewards, dones, infos, available_actions, \
-            values, actions, action_log_probs, rnn_states, rnn_states_critic = data
+            if self.all_args.contrastive:
+                obs, share_obs, rewards, dones, infos, available_actions, \
+                values, actions, action_log_probs, rnn_states, rnn_states_critic, data_rand_rollout = data
+            else:
+                obs, share_obs, rewards, dones, infos, available_actions, \
+                values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
         dones_env = np.all(dones, axis=1)
         if self.all_args.use_transformer_policy:
@@ -165,14 +207,19 @@ class TrafficJunctionRunner(Runner):
         if not self.use_centralized_V:
             share_obs = obs
 
+        if self.all_args.contrastive:
+            drr_obs, drr_share_obs, drr_masks = data_rand_rollout
+        else:
+            drr_obs, drr_share_obs, drr_masks = None, None, None
+
         if self.all_args.use_transformer_policy:
             self.buffer.insert(share_obs, obs, seq_states, seq_states_critic,
                                actions, action_log_probs, values, rewards, masks,
-                               bad_masks, active_masks, available_actions)
+                               bad_masks, active_masks, available_actions, drr_obs, drr_share_obs, drr_masks)
         else:
             self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic,
                                actions, action_log_probs, values, rewards, masks,
-                               bad_masks, active_masks, available_actions)
+                               bad_masks, active_masks, available_actions, drr_obs, drr_share_obs, drr_masks)
 
     def log_train(self, train_infos, total_num_steps):
         train_infos["average_step_rewards"] = np.mean(self.buffer.rewards)

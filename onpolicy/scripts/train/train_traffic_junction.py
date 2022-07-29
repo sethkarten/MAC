@@ -86,8 +86,7 @@ def main(args):
         raise NotImplementedError
 
     # cuda
-    while not (all_args.cuda and torch.cuda.is_available()): print('cuda?', all_args.cuda, torch.cuda.is_available())
-    if all_args.cuda and torch.cuda.is_available() or True:
+    if all_args.cuda and torch.cuda.is_available():
         print("choose to use gpu...")
         device = torch.device("cuda:0")
         torch.set_num_threads(all_args.n_training_threads)
@@ -141,12 +140,14 @@ def main(args):
 
     # env
     envs = make_train_env(all_args)
+    envs_contrastive = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
     num_agents = all_args.num_agents
 
     config = {
         "all_args": all_args,
         "envs": envs,
+        "envs_contrastive": envs_contrastive,
         "eval_envs": eval_envs,
         "num_agents": num_agents,
         "device": device,
