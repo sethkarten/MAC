@@ -123,11 +123,11 @@ class Runner(object):
         """Calculate returns for the collected data."""
         self.trainer.prep_rollout()
         if self.all_args.use_transformer_policy:
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.obs[-1]),
+            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
                                                     np.concatenate(self.buffer.seq_states_critic[-1]),
                                                     np.concatenate(self.buffer.masks[-1]))
         else:
-            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.obs[-1]),
+            next_values = self.trainer.policy.get_values(np.concatenate(self.buffer.share_obs[-1]),
                                                     np.concatenate(self.buffer.rnn_states_critic[-1]),
                                                     np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.n_rollout_threads))

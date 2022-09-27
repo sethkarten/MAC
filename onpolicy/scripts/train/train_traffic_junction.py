@@ -79,6 +79,9 @@ def main(args):
     elif all_args.algorithm_name == "mappo_comm":
         assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), (
             "check recurrent policy!")
+    elif all_args.algorithm_name == "r_mappo":
+        assert (all_args.use_recurrent_policy or all_args.use_naive_recurrent_policy), (
+            "check recurrent policy!")
     elif all_args.algorithm_name == "t_mappo_comm":
         assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), (
             "check recurrent policy!")
@@ -110,7 +113,7 @@ def main(args):
                          name=str(all_args.algorithm_name) + "_" +
                               str(all_args.experiment_name) +
                               "_seed" + str(all_args.seed),
-                         group=all_args.difficulty,
+                         group=str(all_args.experiment_name)+"_"+str(all_args.difficulty),
                          dir=str(run_dir),
                          job_type="training",
                          settings=wandb.Settings(start_method='fork'),
