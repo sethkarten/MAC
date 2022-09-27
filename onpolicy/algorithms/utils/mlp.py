@@ -14,7 +14,6 @@ class MLPLayer(nn.Module):
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
-
         self.fc1 = nn.Sequential(
             init_(nn.Linear(input_dim, hidden_size)), active_func, nn.LayerNorm(hidden_size))
         self.fc_h = nn.Sequential(init_(

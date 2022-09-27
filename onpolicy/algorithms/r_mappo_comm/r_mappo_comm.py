@@ -49,6 +49,9 @@ class R_MAPPO_COMM():
         else:
             self.value_normalizer = None
 
+        # self.loss = torch.tensor(0).to(**self.tpdv)
+        # self.loss_counter = 0
+
     def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
         """
         Calculate value function loss.

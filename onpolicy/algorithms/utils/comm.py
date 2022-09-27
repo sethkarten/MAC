@@ -5,6 +5,7 @@ import numpy as np
 from .util import init
 from onpolicy.algorithms.utils.transformer import Attention
 # import gumbel softmax
+import numpy as np
 
 def _t2n(x):
     return x.detach().cpu().numpy()
@@ -33,7 +34,30 @@ class MAC(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
 
         # create communication action
-        self.comm_act = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
+        if self.args.use_vib or self.args.use_vqvib:
+            self.comm_act = self.vib_forward
+            self.fc_mu = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
+            self.fc_var = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
+            if self.args.use_vqvib:
+                self.message_vocabulary = nn.Parameter(data=torch.Tensor(self.args.vocab_size, self.comm_dim)).to(**self.tpdv)
+                nn.init.uniform_(self.message_vocabulary, -2, 2)
+        elif self.args.use_compositional:
+            self.comm_act = self.compositional_forward
+            # choose transformer or GRU to predict tokens sequentially, mu and var
+            self.to_Q = init_(nn.Linear(self.args.hidden_size, self.args.hidden_size))
+            self.to_V = init_(nn.Linear(self.args.hidden_size, self.args.hidden_size))
+            self.to_K = init_(nn.Linear(self.comm_dim, self.args.hidden_size))
+            self.fc_mu = init_(nn.Linear(self.args.hidden_size, self.args.composition_dim))
+            self.fc_var = init_(nn.Linear(self.args.hidden_size, self.args.composition_dim))
+            # self.EOS_token = nn.Parameter(data=torch.Tensor(self.args.composition_dim)).to(**self.tpdv)
+            self.message_vocabulary = nn.Parameter(data=torch.Tensor(self.args.vocab_size+1, self.args.composition_dim)).to(**self.tpdv)
+            nn.init.uniform_(self.message_vocabulary, -2, 2)
+
+            # noncomp for independence
+            self.fc_inde_mu = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
+            self.fc_inde_var = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
+        else:
+            self.comm_act = init_(nn.Linear(self.args.hidden_size, self.comm_dim))
         # Mask for communication
         if self.comm_action_zero:
             self.comm_mask = torch.zeros(self.num_agents, self.num_agents).to(**self.tpdv)
@@ -47,6 +71,94 @@ class MAC(nn.Module):
         else:
             self.comm_sum_head = init_(nn.Linear(self.comm_dim, self.args.hidden_size))
         self.comm_head = init_(nn.Linear(self.args.hidden_size, self.args.hidden_size))
+
+        self.EPISILON = 1e-6
+        self.norm_factor = 1 / np.sqrt(self.args.hidden_size)
+        torch.autograd.set_detect_anomaly(True)
+
+    def vib_forward(self, hidden_state):
+        mu = self.fc_mu(hidden_state)
+        log_var = self.fc_var(hidden_state)
+        #reparameterize
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        out = eps * std + mu
+
+        self.decoding_mu = mu.squeeze().clone()
+        self.decoding_log_var = log_var.squeeze().clone()
+
+        return out
+
+    def vqvib_forward(self, hidden_state):
+        return torch.min((vib_forward(hidden_state) - self.message_vocabulary).square(), 1)
+
+    def compositional_forward(self, hidden_state):
+        # predict VIB tokens until repeat or EOS token
+        batch_size = len(hidden_state)
+        self.decoding_mus = []
+        self.decoding_log_vars = []
+        Q, V = self.to_Q(hidden_state) * self.norm_factor, self.to_K(hidden_state)
+        total_tokens = self.comm_dim // self.args.composition_dim
+        mask = torch.ones(batch_size).to(**self.tpdv)
+        mask.requires_grad = False
+        finished_messages = torch.zeros(batch_size).to(**self.tpdv)
+        EOS_token = self.message_vocabulary[-1]
+        message = torch.zeros(batch_size, total_tokens, self.args.composition_dim).to(**self.tpdv)
+        # print("total_tokens", total_tokens, self.args.composition_dim, batch_size)
+        for i in range(total_tokens):
+            # predict token
+            m = message.reshape(batch_size, -1).clone()
+            K = self.to_K(m) * self.norm_factor
+            dot = Q * K
+            attn = F.softmin(dot, dim=-1)
+            hidden_attn = attn * V
+            token_mu = self.fc_mu(hidden_attn)
+            token_log_var = self.fc_var(hidden_attn)
+            token_std = torch.exp(0.5 * token_log_var)
+            self.decoding_mus.append(token_mu.squeeze().clone())
+            self.decoding_log_vars.append(token_log_var.squeeze().clone())
+            eps = torch.randn_like(token_std)
+            token = eps * token_std + token_mu
+
+            # discretization layer
+            token_mse = (token.reshape(batch_size,1,self.args.composition_dim) - self.message_vocabulary).square()
+            token = torch.min(token_mse, 1)[0]
+            # need to do gumbel here? to pass through argmin to get actual vocab words and pass through gradient
+            token = token * mask.reshape(-1,1).clone()    # ignore predictions once EOS already reached
+
+            # mask EOS for future
+            eos_mask_index = (token.reshape(batch_size,1,self.args.composition_dim) - self.message_vocabulary[-1]).square().sum(-1) < self.EPISILON
+            # mask repeat tokens
+            mask_index = (token.reshape(batch_size,1,self.args.composition_dim) - message[:,:i]).square().sum(-1) < self.EPISILON
+            if mask_index.shape[1] != 0:
+                mask_index = mask_index.sum(1) > 0 # logical and through time
+                mask_index = torch.logical_or(mask_index, eos_mask_index.reshape(-1))
+            else:
+                mask_index = eos_mask_index
+            mask_index = mask_index.reshape(-1)
+            if mask_index.any():
+                mask[mask_index] = 0
+                EOS_update_indices = torch.logical_and(mask_index, torch.logical_not(finished_messages))
+                self.EOS_token_mse_loss = (token.reshape(batch_size,1,self.args.composition_dim) - self.message_vocabulary[-1]).square().sum(-1).mean()
+                token[EOS_update_indices] = EOS_token
+                # message[EOS_update_indices, i] = EOS_token
+                finished_messages = torch.logical_or(mask_index, finished_messages)
+
+            message[:,i] = token
+            if finished_messages.sum() == batch_size:# all tokens masked:
+                break
+
+        # vartiational for predicting the messages without composition
+        inde_mu = self.fc_inde_mu(hidden_state)
+        inde_var = self.fc_inde_var(hidden_state)
+        inde_std = torch.exp(0.5 * inde_var)
+        self.decoding_inde_mu = inde_var.squeeze().clone()
+        self.decoding_inde_log_var = inde_std.squeeze().clone()
+        inde_eps = torch.randn_like(inde_std)
+        self.noncomp_message = inde_eps * inde_std + inde_mu
+
+        self.message = message.reshape(batch_size, -1)
+        return self.message.clone()
 
     def forward(self, hidden_state, info={}):
         # ================== DECODING PHASE BEGINNING ===================

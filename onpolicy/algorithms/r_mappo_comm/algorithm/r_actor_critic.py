@@ -38,8 +38,7 @@ class MAC_R_Actor(nn.Module):
         self.base = base(args, obs_shape)
         # self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+        self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         self.communicate = MAC(args, self._active_func, self._gain, device)
 
@@ -47,7 +46,8 @@ class MAC_R_Actor(nn.Module):
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         # autoencoder
-        self.decode = nn.Linear(self.hidden_size, obs_shape[0])
+        if self.args.use_ae:
+            self.decode = nn.Linear(self.hidden_size, obs_shape[0])
 
         self.to(device)
 
@@ -75,8 +75,7 @@ class MAC_R_Actor(nn.Module):
 
         # communicate
         actor_features = self.communicate(actor_features)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+        actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
@@ -111,17 +110,47 @@ class MAC_R_Actor(nn.Module):
 
         # communicate
         actor_features = self.communicate(actor_features)
-        decoded = self.decode(actor_features)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+        if self.args.use_ae:
+            decoded = self.decode(actor_features)
+        actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
                                                                    action, available_actions,
                                                                    active_masks=
                                                                    active_masks if self._use_policy_active_masks
                                                                    else None)
-        ae_loss = nn.functional.mse_loss(decoded, obs)
-        return action_log_probs, dist_entropy, ae_loss
+        loss = 0
+        if self.args.use_ae:
+            loss = nn.functional.mse_loss(decoded, obs)
+        if self.args.use_vib or self.args.use_vqvib: # KLD
+            mu = self.communicate.decoding_mu
+            log_var = self.communicate.decoding_log_var
+            loss = self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
+            if self.args.use_ndq:
+                # calculate cross entropy
+                # 1st term: nll of p(a|m,s)
+                loss += -torch.log(action_log_probs).sum()
+                # 2nd term: KLD of action prediction (action prediction must be variational), prior is standard gaussian\
+                action_log_var = torch.zeros_like(action_log_probs).to(**self.tpdv)
+                loss += torch.mean(-0.5 * torch.sum(1 + action_log_var - action_log_probs ** 2 - action_log_var.exp(), dim=-1))
+        if self.args.use_compositional:
+            # sum losses for all tokens, EOS loss
+            # loss = torch.tensor(0.).to(**self.tpdv)
+            # loss for noncomp net
+            loss = nn.functional.mse_loss(self.communicate.message, self.communicate.noncomp_message)
+            # independence term
+            mu_comp = self.communicate.decoding_inde_mu
+            var_comp = self.communicate.decoding_inde_log_var
+            # individual message entropy term
+            for i, (mu, log_var) in enumerate(zip(self.communicate.decoding_mus, self.communicate.decoding_log_vars)):
+                loss += self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
+                # indepdence term
+                mu_comp_i = mu_comp[:,i*self.args.composition_dim:(i+1)*self.args.composition_dim]
+                var_comp_i = var_comp[:,i*self.args.composition_dim:(i+1)*self.args.composition_dim]
+                loss += torch.mean( torch.log(log_var.exp().sqrt() / var_comp_i.exp().sqrt()) + (var_comp_i.exp() + (mu_comp_i - mu)**2) / (2 * log_var.exp()) - 0.5 )
+            # self-supervised EOS loss
+            loss += self.communicate.EOS_token_mse_loss
+        return action_log_probs, dist_entropy, loss
 
 
 class R_Critic(nn.Module):
@@ -151,8 +180,7 @@ class R_Critic(nn.Module):
         self.base = base(args, cent_obs_shape)
         # self.base = nn.Linear(cent_obs_shape[0], self.hidden_size)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+        self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         self.communicate = MAC(args, self._active_func, self._gain, device)
 
@@ -183,9 +211,8 @@ class R_Critic(nn.Module):
         critic_features = self.base(cent_obs)
 
         # communicate
-        critic_features = self.communicate(critic_features)
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+        # critic_features = self.communicate(critic_features)
+        critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         values = self.v_out(critic_features)
 
