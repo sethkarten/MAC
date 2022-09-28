@@ -71,7 +71,7 @@ class R_MAPPOPolicy:
                                                                  available_actions,
                                                                  deterministic)
 
-        values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
+        values, rnn_states_critic = self.actor.critic(cent_obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
@@ -83,11 +83,11 @@ class R_MAPPOPolicy:
 
         :return values: (torch.Tensor) value function predictions.
         """
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        values, _ = self.actor.critic(cent_obs, rnn_states_critic, masks)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks,
-                         available_actions=None, active_masks=None):
+                         available_actions=None, active_masks=None, r_obs=None, f_obs=None):
         """
         Get action logprobs / entropy and value function predictions for actor update.
         :param cent_obs (np.ndarray): centralized input to the critic.
@@ -111,8 +111,8 @@ class R_MAPPOPolicy:
                                                                      available_actions,
                                                                      active_masks)
 
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy, ae_loss
+        values, _, contrast_rand_loss, contrast_future_loss = self.actor.critic(cent_obs, rnn_states_critic, masks, r_obs=r_obs, f_obs=f_obs)
+        return values, action_log_probs, dist_entropy, ae_loss, contrast_rand_loss, contrast_future_loss
 
     def act(self, obs, rnn_states_actor, masks, available_actions=None, deterministic=False):
         """

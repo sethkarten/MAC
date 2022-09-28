@@ -43,7 +43,8 @@ class R_MAPPO_COMM():
         assert (self._use_popart and self._use_valuenorm) == False, ("self._use_popart and self._use_valuenorm can not be set True simultaneously")
 
         if self._use_popart:
-            self.value_normalizer = self.policy.critic.v_out
+            # self.value_normalizer = self.policy.critic.v_out
+            self.value_normalizer = self.policy.actor.v_out
         elif self._use_valuenorm:
             self.value_normalizer = ValueNorm(1, device = self.device)
         else:
@@ -52,7 +53,7 @@ class R_MAPPO_COMM():
         # self.loss = torch.tensor(0).to(**self.tpdv)
         # self.loss_counter = 0
 
-    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
+    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch, contrast_future_loss=None, contrast_rand_loss=None):
         """
         Calculate value function loss.
         :param values: (torch.Tensor) value function predictions.
@@ -86,8 +87,15 @@ class R_MAPPO_COMM():
 
         if self._use_value_active_masks:
             value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
+            if contrast_rand_loss is not None:
+                contrast_future_loss = (contrast_future_loss * active_masks_batch).sum() / active_masks_batch.sum()
+                contrast_rand_loss = (contrast_rand_loss * active_masks_batch).sum() / active_masks_batch.sum()
         else:
             value_loss = value_loss.mean()
+            if contrast_rand_loss is not None:
+                contrast_future_loss = contrast_future_loss.mean()
+                contrast_rand_loss = contrast_rand_loss.mean()
+                return value_loss, contrast_rand_loss, contrast_future_loss
 
         return value_loss
 
@@ -106,7 +114,7 @@ class R_MAPPO_COMM():
         """
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch = sample
+        adv_targ, available_actions_batch, r_obs, f_obs = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -115,14 +123,15 @@ class R_MAPPO_COMM():
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy, ae_loss = self.policy.evaluate_actions(share_obs_batch,
+        values, action_log_probs, dist_entropy, ae_loss, contrast_rand_loss, contrast_future_loss = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch,
                                                                               rnn_states_batch,
                                                                               rnn_states_critic_batch,
                                                                               actions_batch,
                                                                               masks_batch,
                                                                               available_actions_batch,
-                                                                              active_masks_batch)
+                                                                              active_masks_batch,
+                                                                              r_obs=r_obs, f_obs=f_obs)
         # actor update
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
 
@@ -138,10 +147,14 @@ class R_MAPPO_COMM():
 
         policy_loss = policy_action_loss
 
+        value_loss, contrast_rand_loss, contrast_future_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch, contrast_future_loss=contrast_future_loss, contrast_rand_loss=contrast_rand_loss)
+
         self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
-            (policy_loss - dist_entropy * self.entropy_coef + ae_loss).backward()
+            # critic head on actor net
+            actor_loss = value_loss * self.value_loss_coef + policy_loss - dist_entropy * self.entropy_coef + ae_loss + contrast_rand_loss + contrast_future_loss
+            actor_loss.backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
@@ -150,21 +163,21 @@ class R_MAPPO_COMM():
 
         self.policy.actor_optimizer.step()
 
-        # critic update
-        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
-
-        self.policy.critic_optimizer.zero_grad()
-
-        (value_loss * self.value_loss_coef).backward()
-
-        if self._use_max_grad_norm:
-            critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
-        else:
-            critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
-
-        self.policy.critic_optimizer.step()
-
-        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss
+        # # critic update
+        # value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
+        #
+        # # self.policy.critic_optimizer.zero_grad()
+        #
+        # (value_loss * self.value_loss_coef).backward()
+        #
+        # if self._use_max_grad_norm:
+        #     critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
+        # else:
+        #     critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
+        #
+        # self.policy.critic_optimizer.step()
+        critic_grad_norm = actor_grad_norm
+        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss, contrast_rand_loss, contrast_future_loss
 
     def train(self, buffer, update_actor=True):
         """
@@ -194,6 +207,8 @@ class R_MAPPO_COMM():
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
         train_info['ae_loss'] = 0
+        train_info['contrast_rand_loss'] = 0
+        train_info['contrast_future_loss'] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
@@ -205,7 +220,7 @@ class R_MAPPO_COMM():
 
             for sample in data_generator:
 
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss \
+                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss, contrast_rand_loss, contrast_future_loss \
                     = self.ppo_update(sample, update_actor)
 
                 train_info['value_loss'] += value_loss.item()
@@ -215,6 +230,8 @@ class R_MAPPO_COMM():
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += imp_weights.mean()
                 train_info['ae_loss'] += ae_loss.item()
+                train_info['contrast_rand_loss'] += contrast_rand_loss.item()
+                train_info['contrast_future_loss'] += contrast_future_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
