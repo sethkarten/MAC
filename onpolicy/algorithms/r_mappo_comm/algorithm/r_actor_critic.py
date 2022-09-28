@@ -28,17 +28,22 @@ class MAC_R_Actor(nn.Module):
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
         self._recurrent_N = args.recurrent_N
+        self._use_popart = args.use_popart
         self.tpdv = dict(dtype=torch.float32, device=device)
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
         self.num_agents = args.num_agents
         self.args = args
+
+        def init_(m):
+            return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
         obs_shape = get_shape_from_obs_space(obs_space)
         base = CNNBase if len(obs_shape) == 3 else MLPBase
         self.base = base(args, obs_shape)
         # self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
-        self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+        self.rnn = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         self.communicate = MAC(args, self._active_func, self._gain, device)
 
@@ -48,6 +53,11 @@ class MAC_R_Actor(nn.Module):
         # autoencoder
         if self.args.use_ae:
             self.decode = nn.Linear(self.hidden_size, obs_shape[0])
+
+        if self._use_popart:
+            self.v_out = init_(PopArt(self.hidden_size, 1, device=device))
+        else:
+            self.v_out = init_(nn.Linear(self.hidden_size, 1))
 
         self.to(device)
 
@@ -74,7 +84,8 @@ class MAC_R_Actor(nn.Module):
         actor_features = self.base(obs)
 
         # communicate
-        actor_features = self.communicate(actor_features)
+        comm_encoding = self.communicate(actor_features)
+        actor_features = torch.cat((comm_encoding, actor_features), -1)
         actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
 
@@ -109,9 +120,10 @@ class MAC_R_Actor(nn.Module):
         actor_features = self.base(obs)
 
         # communicate
-        actor_features = self.communicate(actor_features)
+        comm_encoding = self.communicate(actor_features)
         if self.args.use_ae:
             decoded = self.decode(actor_features)
+        actor_features = torch.cat((comm_encoding, actor_features), -1)
         actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
@@ -152,6 +164,42 @@ class MAC_R_Actor(nn.Module):
             loss += self.communicate.EOS_token_mse_loss
         return action_log_probs, dist_entropy, loss
 
+    def critic(self, obs, rnn_states, masks, r_obs=None, f_obs=None):
+        """
+        Compute actions from the given inputs.
+        :param obs: (np.ndarray / torch.Tensor) observation inputs into network.
+        :param rnn_states: (np.ndarray / torch.Tensor) if RNN network, hidden states for RNN.
+        :param masks: (np.ndarray / torch.Tensor) mask tensor denoting if RNN states should be reinitialized to zeros.
+
+        :return values: (torch.Tensor) value function predictions.
+        :return rnn_states: (torch.Tensor) updated RNN hidden states.
+        """
+        obs = check(obs).to(**self.tpdv)
+        rnn_states = check(rnn_states).to(**self.tpdv)
+        masks = check(masks).to(**self.tpdv)
+
+        critic_features = self.base(obs)
+
+        # communicate
+        comm_encoding = self.communicate(critic_features)
+        critic_features = torch.cat((comm_encoding, critic_features), -1)
+        critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+
+        values = self.v_out(critic_features)
+
+        if self.args.contrastive and r_obs is not None:
+            r_obs = check(r_obs).to(**self.tpdv)
+            r_enc = self.base(r_obs)
+            contrast_rand_loss = -torch.log(1-torch.sigmoid(critic_features.T @ r_enc) + 1e-9)
+            f_obs = check(f_obs).to(**self.tpdv)
+            f_obs = self.base(f_obs)
+            contrast_future_loss = torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
+            return values, rnn_states, contrast_rand_loss, contrast_future_loss
+        # else:
+        #     contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
+        #     contrast_future_loss = torch.tensor(0).to(**self.tpdv)
+
+        return values, rnn_states
 
 class R_Critic(nn.Module):
     """
@@ -211,7 +259,7 @@ class R_Critic(nn.Module):
         critic_features = self.base(cent_obs)
 
         # communicate
-        # critic_features = self.communicate(critic_features)
+        critic_features = self.communicate(critic_features)
         critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
         values = self.v_out(critic_features)
