@@ -90,7 +90,10 @@ class MAC(nn.Module):
         return out
 
     def vqvib_forward(self, hidden_state):
-        return torch.min((vib_forward(hidden_state) - self.message_vocabulary).square(), 1)
+        token_close = vib_forward(hidden_state)
+        token_mse = (token_close - self.message_vocabulary).square()
+        token = torch.min(token_mse, 1)[0]
+        return token
 
     def compositional_forward(self, hidden_state):
         # predict VIB tokens until repeat or EOS token
