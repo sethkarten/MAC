@@ -40,8 +40,8 @@ class MAC_R_Actor(nn.Module):
 
         obs_shape = get_shape_from_obs_space(obs_space)
         base = CNNBase if len(obs_shape) == 3 else MLPBase
-        self.base = base(args, obs_shape)
-        # self.base = nn.Linear(obs_shape[0], self.hidden_size)
+        # self.base = base(args, obs_shape)
+        self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
         self.rnn = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
@@ -131,7 +131,7 @@ class MAC_R_Actor(nn.Module):
                                                                    active_masks=
                                                                    active_masks if self._use_policy_active_masks
                                                                    else None)
-        loss = 0
+        loss = torch.tensor(0).to(**self.tpdv)
         if self.args.use_ae:
             loss = nn.functional.mse_loss(decoded, obs)
         if self.args.use_vib or self.args.use_vqvib: # KLD
@@ -193,13 +193,13 @@ class MAC_R_Actor(nn.Module):
             contrast_rand_loss = -torch.log(1-torch.sigmoid(critic_features.T @ r_enc) + 1e-9)
             f_obs = check(f_obs).to(**self.tpdv)
             f_obs = self.base(f_obs)
-            contrast_future_loss = torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
-            return values, rnn_states, contrast_rand_loss, contrast_future_loss
-        # else:
-        #     contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
-        #     contrast_future_loss = torch.tensor(0).to(**self.tpdv)
+            contrast_future_loss = -torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
+        else:
+            contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
+            contrast_future_loss = torch.tensor(0).to(**self.tpdv)
 
-        return values, rnn_states
+        return values, rnn_states, contrast_rand_loss, contrast_future_loss
+        # return values, rnn_states
 
 class R_Critic(nn.Module):
     """
