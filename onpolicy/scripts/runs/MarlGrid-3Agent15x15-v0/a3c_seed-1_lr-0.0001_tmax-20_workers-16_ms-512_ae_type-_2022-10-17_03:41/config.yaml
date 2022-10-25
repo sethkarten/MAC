@@ -1,0 +1,58 @@
+ae_agent_done: false
+ae_loss_k: 1.0
+ae_pg: 0
+ae_std: 1.0
+ae_type: ''
+anneal_comm_rew: false
+ckpt_save_freq: 100
+comm_rnn: true
+comm_vf: false
+env_cfg:
+  active_after_done: false
+  can_overlap: false
+  clutter_density: 0.15
+  comm_len: 0
+  discrete_comm: true
+  discrete_position: true
+  env_name: MarlGrid-3Agent15x15-v0
+  env_type: c
+  grid_size: 15
+  info_gain_rew: false
+  max_steps: 512
+  neutral_shape: true
+  num_adversaries: 0
+  num_agents: 3
+  num_blind_agents: 0
+  observation_style: dict
+  observe_done: false
+  observe_position: false
+  observe_self_env_act: false
+  observe_self_position: true
+  observe_t: false
+  seed: 1
+  separate_rew_more: false
+  team_reward_freq: none
+  team_reward_multiplier: 1
+  team_reward_type: share
+  view_size: 7
+  view_tile_size: 6
+eval_ae: false
+exp_name: MarlGrid-3Agent15x15-v0/a3c_seed-1_lr-0.0001_tmax-20_workers-16_ms-512_ae_type-_2022-10-17_03:41
+gpu:
+- 0
+id: ''
+img_feat_dim: 64
+layer_norm: true
+lr: 0.0001
+mask: true
+model: shared
+num_eval_episodes: 10
+num_eval_videos: 10
+num_workers: 16
+policy: lstm
+resume_path: ''
+run_dir: runs
+share_critic: false
+tmax: 20
+train_iter: 300000
+video_save_freq: 20
