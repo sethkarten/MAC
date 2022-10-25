@@ -58,6 +58,7 @@ class TrafficJunctionEnv(gym.Env):
             self.observation_space.append(self.get_obs_size())
             global_state_size = self.get_obs_size()
             # global_state_size.insert(0, self.ncar)
+            # print(global_state_size)
             global_state_size[0] *= self.ncar
             self.share_observation_space.append(global_state_size)
 
@@ -235,6 +236,7 @@ class TrafficJunctionEnv(gym.Env):
         # Observation will be ncar * vision * vision ndarray
         obs = self._get_obs()
         available_actions = np.array([self.ncar * [True, True]]).reshape(self.ncar, 2)
+        print(available_actions.shape)
         s_ob = self.get_state(obs)
         return obs, s_ob, available_actions
 
@@ -418,6 +420,7 @@ class TrafficJunctionEnv(gym.Env):
         return obs
 
     def get_state(self, local_obs):
+        print(local_obs.shape)
         n, s = local_obs.shape
         return np.tile(local_obs, [self.ncar, 1]).reshape(n, n * s)
 
