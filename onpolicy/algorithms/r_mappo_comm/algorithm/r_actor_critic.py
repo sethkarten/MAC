@@ -38,6 +38,10 @@ class MAC_R_Actor(nn.Module):
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
     def __init__(self, args, obs_space, action_space, device=torch.device("cpu")):
+        args.comm_dim = 64
+        self.comm_dim = args.comm_dim
+        self.use_cnn = True
+
         super(MAC_R_Actor, self).__init__()
         self.hidden_size = args.hidden_size
 
@@ -59,32 +63,37 @@ class MAC_R_Actor(nn.Module):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))
 
         obs_shape = get_shape_from_obs_space(obs_space)
+        self.obs_shape = obs_shape
         base = CNNBase if len(obs_shape) == 3 else MLPBase
         # self.base = base(args, obs_shape)
-        use_cnn = False
-        if args.env_name == 'PascalVoc' and use_cnn == True:
+        if args.env_name == 'PascalVoc' and self.use_cnn == True:
             self.base = SimpleConv(self.hidden_size)
         else:
             self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
         self.rnn = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
-        self.decodeBase = nn.Linear(self.hidden_size*2, self.hidden_size)
+        self.decodeBase = nn.Linear(self.hidden_size + args.comm_dim, self.hidden_size)
 
-        self.communicate = MAC(args, self._active_func, self._gain, device)
+        self.communicate = MAC(args, self.hidden_size, device=device)
 
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         if args.env_name == 'PascalVoc':
-            self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
+            if args.env_name == 'PascalVoc' and self.use_cnn == True:
+                self.base2 = SimpleConv(self.hidden_size)
+            else:
+                self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
             # self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
-            self.decodeBase2 = nn.Linear(self.hidden_size*2, self.hidden_size)
-            self.communicate2 = MAC(args, self._active_func, self._gain, device)
+            self.decodeBase2 = nn.Linear(self.hidden_size + args.comm_dim, self.hidden_size)
+            self.communicate2 = MAC(args, self.hidden_size, device=device)
             self.act2 = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         # autoencoder
         if self.args.use_ae:
-            self.decode = nn.Linear(self.hidden_size, obs_shape[0])
+            self.decode = nn.Linear(self.comm_dim, obs_shape[0])
+            if args.env_name == 'PascalVoc':
+                self.decode2 = nn.Linear(self.comm_dim, obs_shape[0])
 
         if self._use_popart:
             self.v_out = init_(PopArt(self.hidden_size, 1, device=device))
@@ -108,6 +117,8 @@ class MAC_R_Actor(nn.Module):
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
         if self.args.env_name == 'PascalVoc':
+            if self.use_cnn == True:
+                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
             #AGENT 0
             # obs_copy, rnn_states_copy, masks_copy, available_actions_copy, deterministic_copy = obs, rnn_states, masks, available_actions, deterministic
             obs0 = check(obs[0]).to(**self.tpdv)
@@ -116,7 +127,7 @@ class MAC_R_Actor(nn.Module):
             if available_actions[0] is not None:
                 available_actions0 = check(available_actions[0]).to(**self.tpdv)
 
-            actor_features0 = self.base(obs0)
+            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
 
             #AGENT 1
             obs1 = check(obs[1]).to(**self.tpdv)
@@ -125,7 +136,7 @@ class MAC_R_Actor(nn.Module):
             if available_actions[1] is not None:
                 available_actions1 = check(available_actions[1]).to(**self.tpdv)
 
-            actor_features1 = self.base2(obs1)
+            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
 
             # message encoding
 
@@ -145,19 +156,17 @@ class MAC_R_Actor(nn.Module):
             # comm_encoding = self.communicate2(actor_features1)
 
             # AGENT 0
-            actor_features0 = torch.cat((comm_encoding, agent0_message), -1)
+            actor_features0 = torch.cat((actor_features0, agent0_message), -1)
             actor_features0 = self.decodeBase(actor_features0)
             actions0, action_log_probs0 = self.act(actor_features0, available_actions0, deterministic)
 
             # AGENT 1
-            actor_features1 = torch.cat((comm_encoding, agent1_message), -1)
+            actor_features1 = torch.cat((actor_features1, agent1_message), -1)
             actor_features1 = self.decodeBase2(actor_features1)
             actions1, action_log_probs1 = self.act2(actor_features1, available_actions1, deterministic)
 
             #STACK AND RETURN
-            actions, action_log_probs, rnn_states = torch.stack((actions0, actions1)),
-            torch.stack((action_log_probs0, action_log_probs1)),
-            torch.stack((rnn_states0, rnn_states1))
+            actions, action_log_probs, rnn_states = torch.stack((actions0, actions1)), torch.stack((action_log_probs0, action_log_probs1), dim=1), torch.stack((rnn_states0, rnn_states1))
             return actions, action_log_probs, rnn_states
         else:
             obs = check(obs).to(**self.tpdv)
@@ -192,37 +201,89 @@ class MAC_R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
-        obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
-        action = check(action).to(**self.tpdv)
-        masks = check(masks).to(**self.tpdv)
-        if available_actions is not None:
-            available_actions = check(available_actions).to(**self.tpdv)
+        if self.args.env_name == 'PascalVoc':
+            if self.use_cnn == True:
+                obs0_prior = check(obs[0]).to(**self.tpdv)
+                obs1_prior = check(obs[1]).to(**self.tpdv)
+                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
+            action = check(action).to(**self.tpdv)
+            if available_actions is not None:
+                available_actions = check(available_actions).to(**self.tpdv)
+            if active_masks is not None:
+                active_masks = check(active_masks).to(**self.tpdv)
 
-        if active_masks is not None:
-            active_masks = check(active_masks).to(**self.tpdv)
+            #AGENT 0
+            obs0 = check(obs[0]).to(**self.tpdv)
+            #rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
+            masks0 = check(masks[0]).to(**self.tpdv)
+            # if available_actions[0] is not None:
+            #     available_actions0 = check(available_actions[0]).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
+            
+            #AGENT 1
+            obs1 = check(obs[1]).to(**self.tpdv)
+            #rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
+            masks1 = check(masks[1]).to(**self.tpdv)
+            # if available_actions[1] is not None:
+            #     available_actions1 = check(available_actions[1]).to(**self.tpdv)
 
-        # communicate
-        comm_encoding = self.communicate(actor_features)
-        if self.args.use_ae:
-            decoded = self.decode(actor_features)
-            if self.args.env_name == 'PascalVoc':
-                decoded1 = self.decode2(actor_features1)
-        actor_features = torch.cat((comm_encoding, actor_features), -1)
-        actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
 
-        action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
-                                                                   action, available_actions,
-                                                                   active_masks=
-                                                                   active_masks if self._use_policy_active_masks
-                                                                   else None)
-        loss = torch.tensor(0).to(**self.tpdv)
-        if self.args.use_ae:
-            loss = nn.functional.mse_loss(decoded, obs[0])
-            if self.args.env_name == 'PascalVoc':
-                loss += nn.functional.mse_loss(decoded1, obs[1])
+            # message encoding
+
+            if self.args.use_compositional:
+                agent0_message = self.communicate.compositional_forward(actor_features0)
+                agent1_message = self.communicate2.compositional_forward(actor_features1)
+            elif self.args.use_vqvib:
+                agent0_message = self.communicate.vqvib_forward(actor_features0)
+                agent1_message = self.communicate2.vqvib_forward(actor_features1)
+            else:
+                agent0_message = self.communicate.ae_forward(actor_features0)
+                agent1_message = self.communicate2.ae_forward(actor_features1)
+
+            # loss then communicate
+            loss = torch.tensor(0).to(**self.tpdv)
+            if self.args.use_ae:
+                decoded = self.decode(agent0_message)
+                decoded1 = self.decode2(agent1_message)
+                loss = nn.functional.mse_loss(decoded, obs0_prior)
+                loss += nn.functional.mse_loss(decoded1, obs1_prior)
+            
+            agent0_message, agent1_message = agent1_message, agent0_message
+
+            # AGENT 0
+            actor_features0 = torch.cat((actor_features0, agent0_message), -1)
+            actor_features0 = self.decodeBase(actor_features0)
+            # AGENT 1
+            actor_features1 = torch.cat((actor_features1, agent1_message), -1)
+            actor_features1 = self.decodeBase2(actor_features1)
+
+            actor_features = torch.stack((actor_features0, actor_features1))
+        else:
+            obs = check(obs).to(**self.tpdv)
+            rnn_states = check(rnn_states).to(**self.tpdv)
+            action = check(action).to(**self.tpdv)
+            masks = check(masks).to(**self.tpdv)
+            if available_actions is not None:
+                available_actions = check(available_actions).to(**self.tpdv)
+
+            if active_masks is not None:
+                active_masks = check(active_masks).to(**self.tpdv)
+
+            actor_features = self.base(obs)
+
+            # communicate
+            comm_encoding = self.communicate(actor_features)
+            if self.args.use_ae:
+                decoded = self.decode(actor_features)
+            actor_features = torch.cat((comm_encoding, actor_features), -1)
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+
+            loss = torch.tensor(0).to(**self.tpdv)
+            if self.args.use_ae:
+                loss = nn.functional.mse_loss(decoded, obs)
+        
         if self.args.use_vib or self.args.use_vqvib: # KLD
             mu = self.communicate.decoding_mu
             log_var = self.communicate.decoding_log_var
@@ -236,6 +297,12 @@ class MAC_R_Actor(nn.Module):
             loss += self.communicate.compositional_loss()
             if self.args.env_name == 'PascalVoc':
                 loss += self.communicate2.compositional_loss()
+        
+        action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
+                                                                   action, available_actions,
+                                                                   active_masks=
+                                                                   active_masks if self._use_policy_active_masks
+                                                                   else None)
 
         return action_log_probs, dist_entropy, loss
 
@@ -249,32 +316,90 @@ class MAC_R_Actor(nn.Module):
         :return values: (torch.Tensor) value function predictions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
-        obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
-        masks = check(masks).to(**self.tpdv)
+        if self.args.env_name == 'PascalVoc':
+            if self.use_cnn == True:
+                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
+            #AGENT 0
+            obs0 = check(obs[0]).to(**self.tpdv)
+            # rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
+            masks0 = check(masks[0]).to(**self.tpdv)
 
-        critic_features = self.base(obs)
+            critic_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
 
-        # communicate
-        comm_encoding = self.communicate(critic_features)
-        critic_features = torch.cat((comm_encoding, critic_features), -1)
-        critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+            #AGENT 1
+            obs1 = check(obs[1]).to(**self.tpdv)
+            # rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
+            masks1 = check(masks[1]).to(**self.tpdv)
 
-        values = self.v_out(critic_features)
+            critic_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
 
-        if self.args.contrastive and r_obs is not None:
-            r_obs = check(r_obs).to(**self.tpdv)
-            r_enc = self.base(r_obs)
-            contrast_rand_loss = -torch.log(1-torch.sigmoid(critic_features.T @ r_enc) + 1e-9)
-            f_obs = check(f_obs).to(**self.tpdv)
-            f_obs = self.base(f_obs)
-            contrast_future_loss = -torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
+            # message encoding
+
+            if self.args.use_compositional:
+                agent0_message = self.communicate.compositional_forward(critic_features0)
+                agent1_message = self.communicate2.compositional_forward(critic_features1)
+            elif self.args.use_vqvib:
+                agent0_message = self.communicate.vqvib_forward(critic_features0)
+                agent1_message = self.communicate2.vqvib_forward(critic_features1)
+            else:
+                agent0_message = self.communicate.ae_forward(critic_features0)
+                agent1_message = self.communicate2.ae_forward(critic_features1)
+
+            # communicate
+            agent0_message, agent1_message = agent1_message, agent0_message
+
+            # AGENT 0
+            critic_features0 = torch.cat((critic_features0, agent0_message), -1)
+            critic_features0 = self.decodeBase(critic_features0)
+
+            # AGENT 1
+            critic_features1 = torch.cat((critic_features1, agent1_message), -1)
+            critic_features1 = self.decodeBase2(critic_features1)
+
+            value0 = self.v_out(critic_features0)
+            value1 = self.v_out(critic_features1)
+
+            values = torch.stack((value0, value1))
+
+            if self.args.contrastive and r_obs is not None:
+                r_obs = check(r_obs).to(**self.tpdv)
+                r_enc = self.base(r_obs)
+                contrast_rand_loss = -torch.log(1-torch.sigmoid(critic_features.T @ r_enc) + 1e-9)
+                f_obs = check(f_obs).to(**self.tpdv)
+                f_obs = self.base(f_obs)
+                contrast_future_loss = -torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
+            else:
+                contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
+                contrast_future_loss = torch.tensor(0).to(**self.tpdv)
+
+            return values, rnn_states, contrast_rand_loss, contrast_future_loss
         else:
-            contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
-            contrast_future_loss = torch.tensor(0).to(**self.tpdv)
+            obs = check(obs).to(**self.tpdv)
+            rnn_states = check(rnn_states).to(**self.tpdv)
+            masks = check(masks).to(**self.tpdv)
 
-        return values, rnn_states, contrast_rand_loss, contrast_future_loss
-        # return values, rnn_states
+            critic_features = self.base(obs)
+
+            # communicate
+            comm_encoding = self.communicate(critic_features)
+            critic_features = torch.cat((comm_encoding, critic_features), -1)
+            critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
+
+            values = self.v_out(critic_features)
+
+            if self.args.contrastive and r_obs is not None:
+                r_obs = check(r_obs).to(**self.tpdv)
+                r_enc = self.base(r_obs)
+                contrast_rand_loss = -torch.log(1-torch.sigmoid(critic_features.T @ r_enc) + 1e-9)
+                f_obs = check(f_obs).to(**self.tpdv)
+                f_obs = self.base(f_obs)
+                contrast_future_loss = -torch.log(torch.sigmoid(critic_features.T @ f_obs) + 1e-9)
+            else:
+                contrast_rand_loss = torch.tensor(0).to(**self.tpdv)
+                contrast_future_loss = torch.tensor(0).to(**self.tpdv)
+
+            return values, rnn_states, contrast_rand_loss, contrast_future_loss
+            # return values, rnn_states
 
 class R_Critic(nn.Module):
     """
@@ -305,7 +430,7 @@ class R_Critic(nn.Module):
 
         self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
-        self.communicate = MAC(args, self._active_func, self._gain, device)
+        self.communicate = MAC(args, self.hidden_size, device=device)
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0))

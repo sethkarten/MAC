@@ -24,26 +24,28 @@ class MAC(nn.Module):
         """
 
         super(MAC, self).__init__()
+        args.hid_size = args.hidden_size
+        # args.comm_dim = 64
         self.args = args
-        self.nagents = args.nagents
-        self.hid_size = args.hid_size
-        self.comm_passes = args.comm_passes
-        self.max_len = min(args.dim, 10)
+        self.nagents = args.num_agents
+        self.hid_size = args.hidden_size
+        self.comm_passes = args.comm_rounds
+        # self.max_len = min(args.composition_dim, 10)
         self.dropout = 0.
-        self.vocab_size = args.num_proto
+        self.vocab_size = args.vocab_size
         self.composition_dim = 2
         self.EPISILON = 1e-9
-        self.comm_dim = args.comm_dim
-        self.norm_factor = 1 / np.sqrt(self.args.hid_size)
+        self.comm_dim = 64
+        self.norm_factor = 1 / np.sqrt(self.hid_size)
 
         self.tpdv = dict(dtype=torch.float32, device=device)
         # embedding for one hot encoding of inputs
         self.embed = nn.Linear(num_inputs, args.hid_size)
 
         # message action generation
-        self.init_hidden(args.batch_size)
-        # self.message_gru = nn.GRU(args.hid_size, args.hid_size)
-        self.message_gru = nn.Linear(args.hid_size, args.hid_size)
+        # self.init_hidden(args.batch_size)
+        # # self.message_gru = nn.GRU(args.hid_size, args.hid_size)
+        # self.message_gru = nn.Linear(args.hid_size, args.hid_size)
 
         if self.args.vae or self.args.use_vqvib:
             self.fc_mu = nn.Linear(args.hid_size, args.comm_dim)
@@ -82,13 +84,13 @@ class MAC(nn.Module):
 
 
         # Decoder for information maximizing communication
-        if self.args.autoencoder:
+        if self.args.use_ae:
             self.decoder_head = nn.Linear(args.comm_dim, num_inputs)
 
         # attend to latent obs/intent/comm to produce action
         # self.attend_action = SelfAttention(args.num_heads, args.hid_size)
-        print(args.num_actions)
-        self.action_head = nn.Linear(self.hid_size, args.num_actions[0])
+        # print(args.num_actions)
+        # self.action_head = nn.Linear(self.hid_size, args.num_actions[0])
 
         # Gate sparse communication
         self.gating_head = nn.Linear(self.hid_size, 2)
@@ -97,12 +99,12 @@ class MAC(nn.Module):
         self.value_head = nn.Linear(self.hid_size, 1)
 
         # Mask for communication
-        if self.args.comm_mask_zero:
-            self.comm_mask = torch.zeros(self.nagents, self.nagents).to(**self.tpdv)
-        else:
-            # this just prohibits self communication
-            self.comm_mask = (torch.ones(self.nagents, self.nagents) \
-                            - torch.eye(self.nagents, self.nagents)).to(**self.tpdv)
+        # if self.args.comm_mask_zero:
+        #     self.comm_mask = torch.zeros(self.nagents, self.nagents).to(**self.tpdv)
+        # else:
+        #     # this just prohibits self communication
+        #     self.comm_mask = (torch.ones(self.nagents, self.nagents) \
+        #                     - torch.eye(self.nagents, self.nagents)).to(**self.tpdv)
 
 
         self.apply(self.init_weights)
