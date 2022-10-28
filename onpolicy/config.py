@@ -234,6 +234,7 @@ def get_config():
     parser.add_argument("--lookahead", type=int, default=2, help="Use contrastive data from up to this far in the future")
 
     # use autoencoder
+    parser.add_argument("--vae", action='store_true', default=False, help='ground communication in autoencoder')
     parser.add_argument("--use_ae", action='store_true', default=False, help='ground communication in autoencoder')
     parser.add_argument("--use_vib", action='store_true', default=False, help='ground communication in autoencoder')
     parser.add_argument("--use_ndq", action='store_true', default=False, help='ground communication in autoencoder')

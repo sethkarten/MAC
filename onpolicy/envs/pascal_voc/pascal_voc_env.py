@@ -31,6 +31,7 @@ from copy import deepcopy
 #Pascal Voc modules
 from gluoncv import data, utils
 from mxnet.gluon.data.vision import transforms
+import mxnet as mx
 # from matplotlib import pyplot as plt
 import os
 
@@ -55,7 +56,8 @@ class PascalVocEnv(gym.Env):
         self.episode_over = False
         self.has_failed = 0
 
-        self.resize = False #IMPORTANT IF YOU WANT TO RESIZE IMAGES
+        self.resize = True #IMPORTANT IF YOU WANT TO RESIZE IMAGES
+        self.ctx = mx.cpu(0)
         self.multi_agent_init(args)
 
         self.action_space = []
@@ -69,9 +71,9 @@ class PascalVocEnv(gym.Env):
             global_state_size[0] *= self.ncar
             self.share_observation_space.append(global_state_size)
         if self.resize == True:
-            transform = transforms.Resize((32, 32))
-            self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')], transform=transform)
-            self.val_dataset = data.VOCDetection(splits=[(2007, 'test')], transform=transform)
+            # transformer = transforms.Resize(size=(32, 32))
+            self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
+            self.val_dataset = data.VOCDetection(splits=[(2007, 'test')])
         else:
             self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
             self.val_dataset = data.VOCDetection(splits=[(2007, 'test')])
@@ -351,6 +353,8 @@ class PascalVocEnv(gym.Env):
         available_actions = np.array([self.ncar * [True, True, True, True, True]*2]).reshape(self.ncar, 10)
         # Next image
         self.curr_iteration_idx += 1
+        if self.curr_iteration_idx == self.agent_train_idxs.shape[1]:
+            self.curr_iteration_idx = 0
         self.curr_idx = self.agent_train_idxs[:, self.curr_iteration_idx]
 
         return local_obs, global_state, reward, dones, infos, available_actions
@@ -448,6 +452,10 @@ class PascalVocEnv(gym.Env):
 
             # provide current images
             train_image, train_label = self.train_dataset[int(p)]
+            train_image = data.transforms.presets.segmentation.test_transform(train_image, self.ctx)
+            train_image = train_image[0].reshape(375, 500, 3)
+            if self.resize == True:
+                train_image = data.transforms.image.imresize(src=train_image, w=32, h=32)
             train_image = train_image.asnumpy()
 
             # route id

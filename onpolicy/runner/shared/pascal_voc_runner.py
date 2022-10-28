@@ -182,7 +182,7 @@ class PascalVocRunner(Runner):
                                                 np.concatenate(self.buffer.masks[step]),
                                                 np.concatenate(self.buffer.available_actions[step]))
             rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads))
-            rnn_states_critic = np.array(np.split(_t2n(rnn_state_critic), self.n_rollout_threads))
+            rnn_states_critic = np.array(np.split(rnn_state_critic, self.n_rollout_threads))
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
