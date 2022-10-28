@@ -30,6 +30,7 @@ from copy import deepcopy
 
 #Pascal Voc modules
 from gluoncv import data, utils
+from mxnet.gluon.data.vision import transforms
 # from matplotlib import pyplot as plt
 import os
 
@@ -42,7 +43,7 @@ class PascalVocEnv(gym.Env):
 
     def __init__(self, args):
         self.__version__ = "0.0.1"
-        self.name  = "TrafficJunction"
+        self.name  = "PascalVoc"
         #print("init traffic junction", getargspec(self.reset).args)
         # TODO: better config handling
         self.OUTSIDE_CLASS = 0
@@ -53,6 +54,8 @@ class PascalVocEnv(gym.Env):
 
         self.episode_over = False
         self.has_failed = 0
+
+        self.resize = False #IMPORTANT IF YOU WANT TO RESIZE IMAGES
         self.multi_agent_init(args)
 
         self.action_space = []
@@ -65,13 +68,19 @@ class PascalVocEnv(gym.Env):
             # global_state_size.insert(0, self.ncar)
             global_state_size[0] *= self.ncar
             self.share_observation_space.append(global_state_size)
-        self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
-        self.val_dataset = data.VOCDetection(splits=[(2007, 'test')])
+        if self.resize == True:
+            transform = transforms.Resize((32, 32))
+            self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')], transform=transform)
+            self.val_dataset = data.VOCDetection(splits=[(2007, 'test')], transform=transform)
+        else:
+            self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
+            self.val_dataset = data.VOCDetection(splits=[(2007, 'test')])
         #print(os.getcwd())
-        # self.train_idxs = np.loadtxt('./onpolicy/envs/pascal_voc/train_idxs.txt')
-        self.train_idxs = np.loadtxt('../envs/pascal_voc/train_idxs.txt')
+        self.train_idxs = np.loadtxt('./onpolicy/envs/pascal_voc/train_idxs.txt')
+        # self.train_idxs = np.loadtxt('../envs/pascal_voc/train_idxs.txt')
         self.agent_train_idxs = np.vstack((np.random.permutation(self.train_idxs), np.random.permutation(self.train_idxs)))
-        self.curr_idx = self.agent_train_idxs[:, 0]
+        self.curr_iteration_idx = 0
+        self.curr_idx = self.agent_train_idxs[:, self.curr_iteration_idx]
         self.label_dict_reversed = {
             1: 0,
             6: 1,
@@ -80,11 +89,16 @@ class PascalVocEnv(gym.Env):
             17: 4
         }
         self.label_dict = {
-            0: 1,
-            1: 6,
-            2: 11,
-            3: 14,
-            4: 17
+            0: [1, 6],
+            1: [1, 11],
+            2: [1, 14],
+            3: [1, 17],
+            4: [6, 11],
+            5: [6, 14],
+            6: [6, 17],
+            7: [11, 14],
+            8: [11, 17],
+            9: [14, 17]
         }
 
     # def init_curses(self):
@@ -127,7 +141,7 @@ class PascalVocEnv(gym.Env):
             raise RuntimeError("Difficulty key error")
 
         self.ncar = args.num_agents
-        self.dims = dims = (375, 500)
+        self.dims = dims = (375, 500) if self.resize == False else (32, 32)
         difficulty = args.difficulty
         vision = args.vision
 
@@ -146,7 +160,7 @@ class PascalVocEnv(gym.Env):
 
         # Define what an agent can do -
         # (0: GAS, 1: BRAKE) i.e. (0: Move 1-step, 1: STAY)
-        self.naction = 5 if difficulty in ['medium','easy','longer_easy'] else 10
+        self.naction = 10 if difficulty in ['medium','easy','longer_easy'] else 10
         self._action_space = spaces.Discrete(self.naction)
 
         # make no. of dims odd for easy case.
@@ -180,6 +194,12 @@ class PascalVocEnv(gym.Env):
                                     # spaces.Discrete(self.npath),
                                     # spaces.MultiBinary( (2*vision + 1, 2*vision + 1, self.vocab_size)),
                                     spaces.Box(0, 1, [375, 500, 3])))
+            if self.resize == True:
+                self._observation_space = spaces.Tuple((
+                                    spaces.Discrete(self.naction),
+                                    # spaces.Discrete(self.npath),
+                                    # spaces.MultiBinary( (2*vision + 1, 2*vision + 1, self.vocab_size)),
+                                    spaces.Box(0, 1, [32, 32, 3])))
         else:
             # r_i, (x,y), vocab = [road class + car]
             self.vocab_size = 1 + 1
@@ -191,6 +211,12 @@ class PascalVocEnv(gym.Env):
                                     # spaces.MultiDiscrete(dims),
                                     # spaces.MultiBinary( (2*vision + 1, 2*vision + 1, self.vocab_size)),
                                     spaces.Box(0, 1, [375, 500, 3])))
+            if self.resize == True:
+                self._observation_space = spaces.Tuple((
+                                    spaces.Discrete(self.naction),
+                                    # spaces.Discrete(self.npath),
+                                    # spaces.MultiBinary( (2*vision + 1, 2*vision + 1, self.vocab_size)),
+                                    spaces.Box(0, 1, [32, 32, 3])))
             # Actual observation will be of the shape 1 * ncar * ((x,y) , (2v+1) * (2v+1) * vocab_size)
 
         # self._set_grid()
@@ -262,7 +288,7 @@ class PascalVocEnv(gym.Env):
 
         # Observation will be ncar * vision * vision ndarray
         obs = self._get_obs()
-        available_actions = np.array([self.ncar * [True, True, True, True, True]]).reshape(self.ncar, 5)
+        available_actions = np.array([self.ncar * [True, True, True, True, True]*2]).reshape(self.ncar, 10)
         s_ob = self.get_state(obs)
         return obs, s_ob, available_actions
 
@@ -322,7 +348,10 @@ class PascalVocEnv(gym.Env):
         for i in range(self.ncar):
             infos[i] = self.stat.copy()
             dones[i] = self.has_failed == 1
-        available_actions = np.array([self.ncar * [True, True, True, True, True]]).reshape(self.ncar, 5)
+        available_actions = np.array([self.ncar * [True, True, True, True, True]*2]).reshape(self.ncar, 10)
+        # Next image
+        self.curr_iteration_idx += 1
+        self.curr_idx = self.agent_train_idxs[:, self.curr_iteration_idx]
 
         return local_obs, global_state, reward, dones, infos, available_actions
 
@@ -681,8 +710,12 @@ class PascalVocEnv(gym.Env):
 
             # retrieve current image labels
             train_image, train_label = self.train_dataset[int(p)]
-            if self.label_dict.get(act) in np.unique(train_label[:, 4:5]):
-                reward[i] += 0.5
+            # if self.label_dict.get(act) in np.unique(train_label[:, 4:5]):
+            #     reward[i] += 0.5
+            reward[i] += (np.intersect1d(self.label_dict.get(act), np.unique(train_label[:, 4:5])).size)*0.25
+        if reward[0] == 0.5 and reward[1] == 0.5:
+            reward[0] = 1
+            reward[1] = 1
             
         # for i, l in enumerate(self.car_loc):
         #     if (len(np.where(np.all(self.car_loc[:i] == l,axis=1))[0]) or \
