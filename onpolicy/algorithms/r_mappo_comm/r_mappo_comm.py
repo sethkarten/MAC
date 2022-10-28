@@ -115,6 +115,7 @@ class R_MAPPO_COMM():
         share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
         adv_targ, available_actions_batch, r_obs, f_obs = sample
+        # print('r_mappo_comm.py', obs_batch.shape)
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -146,7 +147,6 @@ class R_MAPPO_COMM():
             policy_action_loss = -torch.sum(torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
 
         policy_loss = policy_action_loss
-
         value_loss, contrast_rand_loss, contrast_future_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch, contrast_future_loss=contrast_future_loss, contrast_rand_loss=contrast_rand_loss)
 
         self.policy.actor_optimizer.zero_grad()
@@ -217,9 +217,7 @@ class R_MAPPO_COMM():
                 data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
             else:
                 data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
-
             for sample in data_generator:
-
                 value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights, ae_loss, contrast_rand_loss, contrast_future_loss \
                     = self.ppo_update(sample, update_actor)
 
@@ -232,7 +230,6 @@ class R_MAPPO_COMM():
                 train_info['ae_loss'] += ae_loss.item()
                 train_info['contrast_rand_loss'] += contrast_rand_loss.item()
                 train_info['contrast_future_loss'] += contrast_future_loss.item()
-
         num_updates = self.ppo_epoch * self.num_mini_batch
 
         for k in train_info.keys():

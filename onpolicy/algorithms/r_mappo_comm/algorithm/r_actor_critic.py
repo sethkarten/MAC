@@ -68,6 +68,7 @@ class MAC_R_Actor(nn.Module):
             self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
         self.rnn = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+        self.decodeBase = nn.Linear(self.hidden_size*2, self.hidden_size)
 
         self.communicate = MAC(args, self._active_func, self._gain, device)
 
@@ -76,7 +77,8 @@ class MAC_R_Actor(nn.Module):
 
         if args.env_name == 'PascalVoc':
             self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
-            self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            # self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.decodeBase2 = nn.Linear(self.hidden_size*2, self.hidden_size)
             self.communicate2 = MAC(args, self._active_func, self._gain, device)
             self.act2 = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
@@ -116,14 +118,6 @@ class MAC_R_Actor(nn.Module):
 
             actor_features0 = self.base(obs0)
 
-            # communicate
-            comm_encoding = self.communicate(actor_features0)
-            actor_features0 = torch.cat((comm_encoding, actor_features0), -1)
-            actor_features0, rnn_states0 = self.rnn(actor_features0, rnn_states0, masks0)
-
-
-            actions0, action_log_probs0 = self.act(actor_features0, available_actions0, deterministic)
-
             #AGENT 1
             obs1 = check(obs[1]).to(**self.tpdv)
             rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
@@ -133,16 +127,35 @@ class MAC_R_Actor(nn.Module):
 
             actor_features1 = self.base2(obs1)
 
+            # message encoding
+
+            if self.args.use_compositional:
+                agent0_message = self.communicate.compositional_forward(actor_features0)
+                agent1_message = self.communicate2.compositional_forward(actor_features1)
+            elif self.args.use_vqvib:
+                agent0_message = self.communicate.vqvib_forward(actor_features0)
+                agent1_message = self.communicate2.vqvib_forward(actor_features1)
+            else:
+                agent0_message = self.communicate.ae_forward(actor_features0)
+                agent1_message = self.communicate2.ae_forward(actor_features1)
+
             # communicate
-            comm_encoding = self.communicate2(actor_features1)
-            actor_features1 = torch.cat((comm_encoding, actor_features1), -1)
-            actor_features1, rnn_states1 = self.rnn2(actor_features1, rnn_states1, masks1)
+            agent0_message, agent1_message = agent1_message, agent0_message
+            # comm_encoding = self.communicate(actor_features0)
+            # comm_encoding = self.communicate2(actor_features1)
 
+            # AGENT 0
+            actor_features0 = torch.cat((comm_encoding, agent0_message), -1)
+            actor_features0 = self.decodeBase(actor_features0)
+            actions0, action_log_probs0 = self.act(actor_features0, available_actions0, deterministic)
 
+            # AGENT 1
+            actor_features1 = torch.cat((comm_encoding, agent1_message), -1)
+            actor_features1 = self.decodeBase2(actor_features1)
             actions1, action_log_probs1 = self.act2(actor_features1, available_actions1, deterministic)
 
             #STACK AND RETURN
-            actions, action_log_probs, rnn_states = torch.stack((actions0, actions1)), 
+            actions, action_log_probs, rnn_states = torch.stack((actions0, actions1)),
             torch.stack((action_log_probs0, action_log_probs1)),
             torch.stack((rnn_states0, rnn_states1))
             return actions, action_log_probs, rnn_states
@@ -210,30 +223,11 @@ class MAC_R_Actor(nn.Module):
             mu = self.communicate.decoding_mu
             log_var = self.communicate.decoding_log_var
             loss = self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
-            if self.args.use_ndq:
-                # calculate cross entropy
-                # 1st term: nll of p(a|m,s)
-                loss += -torch.log(action_log_probs).sum()
-                # 2nd term: KLD of action prediction (action prediction must be variational), prior is standard gaussian\
-                action_log_var = torch.zeros_like(action_log_probs).to(**self.tpdv)
-                loss += torch.mean(-0.5 * torch.sum(1 + action_log_var - action_log_probs ** 2 - action_log_var.exp(), dim=-1))
         if self.args.use_compositional:
-            # sum losses for all tokens, EOS loss
-            # loss = torch.tensor(0.).to(**self.tpdv)
-            # loss for noncomp net
-            loss = nn.functional.mse_loss(self.communicate.message, self.communicate.noncomp_message)
-            # independence term
-            mu_comp = self.communicate.decoding_inde_mu
-            var_comp = self.communicate.decoding_inde_log_var
-            # individual message entropy term
-            for i, (mu, log_var) in enumerate(zip(self.communicate.decoding_mus, self.communicate.decoding_log_vars)):
-                loss += self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
-                # indepdence term
-                mu_comp_i = mu_comp[:,i*self.args.composition_dim:(i+1)*self.args.composition_dim]
-                var_comp_i = var_comp[:,i*self.args.composition_dim:(i+1)*self.args.composition_dim]
-                loss += torch.mean( torch.log(log_var.exp().sqrt() / var_comp_i.exp().sqrt()) + (var_comp_i.exp() + (mu_comp_i - mu)**2) / (2 * log_var.exp()) - 0.5 )
-            # self-supervised EOS loss
-            loss += self.communicate.EOS_token_mse_loss
+            loss += self.communicate.compositional_loss()
+            if self.args.env_name == 'PascalVoc':
+                loss += self.communicate2.compositional_loss()
+
         return action_log_probs, dist_entropy, loss
 
     def critic(self, obs, rnn_states, masks, r_obs=None, f_obs=None):

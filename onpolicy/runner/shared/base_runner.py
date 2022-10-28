@@ -18,7 +18,7 @@ class Runner(object):
 
         self.all_args = config['all_args']
         self.envs = config['envs']
-        self.envs_contrastive = config['envs_contrastive']
+        # self.envs_contrastive = config['envs_contrastive']
         self.eval_envs = config['eval_envs']
         self.device = config['device']
         self.num_agents = config['num_agents']
@@ -73,6 +73,9 @@ class Runner(object):
         elif self.all_args.algorithm_name == 'r_mappo':
             from onpolicy.algorithms.r_mappo.r_mappo import R_MAPPO as TrainAlgo
             from onpolicy.algorithms.r_mappo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == 'mappo':
+            from onpolicy.algorithms.mappo.mappo import MAPPO as TrainAlgo
+            from onpolicy.algorithms.mappo.algorithm.MAPPOPolicy import MAPPOPolicy as Policy
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
         # print(share_observation_space)
