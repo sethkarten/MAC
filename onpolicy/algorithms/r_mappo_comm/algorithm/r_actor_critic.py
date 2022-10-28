@@ -208,6 +208,8 @@ class MAC_R_Actor(nn.Module):
         comm_encoding = self.communicate(actor_features)
         if self.args.use_ae:
             decoded = self.decode(actor_features)
+            if self.args.env_name == 'PascalVoc':
+                decoded1 = self.decode2(actor_features1)
         actor_features = torch.cat((comm_encoding, actor_features), -1)
         actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
@@ -218,11 +220,18 @@ class MAC_R_Actor(nn.Module):
                                                                    else None)
         loss = torch.tensor(0).to(**self.tpdv)
         if self.args.use_ae:
-            loss = nn.functional.mse_loss(decoded, obs)
+            loss = nn.functional.mse_loss(decoded, obs[0])
+            if self.args.env_name == 'PascalVoc':
+                loss += nn.functional.mse_loss(decoded1, obs[1])
         if self.args.use_vib or self.args.use_vqvib: # KLD
             mu = self.communicate.decoding_mu
             log_var = self.communicate.decoding_log_var
             loss = self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
+
+            mu1 = self.communicate2.decoding_mu
+            log_var1 = self.communicate2.decoding_log_var
+            loss += self.args.beta * torch.mean(-0.5 * torch.sum(1 + log_var1 - mu1 ** 2 - log_var1.exp(), dim=-1))
+
         if self.args.use_compositional:
             loss += self.communicate.compositional_loss()
             if self.args.env_name == 'PascalVoc':
