@@ -8,6 +8,26 @@ from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.comm import MAC
+import torch.nn.functional as F
+
+class SimpleConv(nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, output_size)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class MAC_R_Actor(nn.Module):
     """
@@ -41,7 +61,11 @@ class MAC_R_Actor(nn.Module):
         obs_shape = get_shape_from_obs_space(obs_space)
         base = CNNBase if len(obs_shape) == 3 else MLPBase
         # self.base = base(args, obs_shape)
-        self.base = nn.Linear(obs_shape[0], self.hidden_size)
+        use_cnn = False
+        if args.env_name == 'PascalVoc' and use_cnn == True:
+            self.base = SimpleConv(self.hidden_size)
+        else:
+            self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
         self.rnn = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
@@ -49,6 +73,12 @@ class MAC_R_Actor(nn.Module):
 
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
+
+        if args.env_name == 'PascalVoc':
+            self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
+            self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.communicate2 = MAC(args, self._active_func, self._gain, device)
+            self.act2 = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         # autoencoder
         if self.args.use_ae:
@@ -75,23 +105,65 @@ class MAC_R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of taken actions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
-        obs = check(obs).to(**self.tpdv)
-        rnn_states = check(rnn_states).to(**self.tpdv)
-        masks = check(masks).to(**self.tpdv)
-        if available_actions is not None:
-            available_actions = check(available_actions).to(**self.tpdv)
+        if self.args.env_name == 'PascalVoc':
+            #AGENT 0
+            # obs_copy, rnn_states_copy, masks_copy, available_actions_copy, deterministic_copy = obs, rnn_states, masks, available_actions, deterministic
+            obs0 = check(obs[0]).to(**self.tpdv)
+            rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
+            masks0 = check(masks[0]).to(**self.tpdv)
+            if available_actions[0] is not None:
+                available_actions0 = check(available_actions[0]).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+            actor_features0 = self.base(obs0)
 
-        # communicate
-        comm_encoding = self.communicate(actor_features)
-        actor_features = torch.cat((comm_encoding, actor_features), -1)
-        actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+            # communicate
+            comm_encoding = self.communicate(actor_features0)
+            actor_features0 = torch.cat((comm_encoding, actor_features0), -1)
+            actor_features0, rnn_states0 = self.rnn(actor_features0, rnn_states0, masks0)
 
 
-        actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
+            actions0, action_log_probs0 = self.act(actor_features0, available_actions0, deterministic)
 
-        return actions, action_log_probs, rnn_states
+            #AGENT 1
+            obs1 = check(obs[1]).to(**self.tpdv)
+            rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
+            masks1 = check(masks[1]).to(**self.tpdv)
+            if available_actions[1] is not None:
+                available_actions1 = check(available_actions[1]).to(**self.tpdv)
+
+            actor_features1 = self.base2(obs1)
+
+            # communicate
+            comm_encoding = self.communicate2(actor_features1)
+            actor_features1 = torch.cat((comm_encoding, actor_features1), -1)
+            actor_features1, rnn_states1 = self.rnn2(actor_features1, rnn_states1, masks1)
+
+
+            actions1, action_log_probs1 = self.act2(actor_features1, available_actions1, deterministic)
+
+            #STACK AND RETURN
+            actions, action_log_probs, rnn_states = torch.stack((actions0, actions1)), 
+            torch.stack((action_log_probs0, action_log_probs1)),
+            torch.stack((rnn_states0, rnn_states1))
+            return actions, action_log_probs, rnn_states
+        else:
+            obs = check(obs).to(**self.tpdv)
+            rnn_states = check(rnn_states).to(**self.tpdv)
+            masks = check(masks).to(**self.tpdv)
+            if available_actions is not None:
+                available_actions = check(available_actions).to(**self.tpdv)
+
+            actor_features = self.base(obs)
+
+            # communicate
+            comm_encoding = self.communicate(actor_features)
+            actor_features = torch.cat((comm_encoding, actor_features), -1)
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+
+
+            actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
+
+            return actions, action_log_probs, rnn_states
 
     def evaluate_actions(self, obs, rnn_states, action, masks, available_actions=None, active_masks=None):
         """

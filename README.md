@@ -1,3 +1,4 @@
+NOTE: check pascal_voc_env for self.resize and also check r_actor_critic for use_cnn
 # MAPPO
 
 Chao Yu*, Akash Velu*, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu.
