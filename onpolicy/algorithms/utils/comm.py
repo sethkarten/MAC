@@ -27,13 +27,16 @@ class MAC(nn.Module):
         args.hid_size = args.hidden_size
         # args.comm_dim = 64
         self.args = args
+        self.args.comp_beta = 0.1
         self.nagents = args.num_agents
+        if args.env_name == 'PascalVoc':
+            self.nagents = 1
         self.hid_size = args.hidden_size
         self.comm_passes = args.comm_rounds
         # self.max_len = min(args.composition_dim, 10)
         self.dropout = 0.
         self.vocab_size = args.vocab_size
-        self.composition_dim = 2
+        self.composition_dim = 32
         self.EPISILON = 1e-9
         self.comm_dim = 64
         self.norm_factor = 1 / np.sqrt(self.hid_size)
@@ -165,18 +168,20 @@ class MAC(nn.Module):
         self.decoding_mu = mu.squeeze().clone()#.reshape((1,n,e))
         self.decoding_log_var = log_var.squeeze().clone()#.reshape((1,n,e))
         # print(self.decoding_mu.shape)
-        self.message = out.reshape(self.args.nagents, -1)
+        self.message = out.reshape(self.nagents, -1)
         return out
 
     def vqvib_forward(self, hidden_state):
-        token_close = self.vib_forward(hidden_state).reshape(self.args.nagents, 1, -1)
+        token_close = self.vib_forward(hidden_state).reshape(self.nagents, 1, -1)
         token_mse = (token_close - self.message_vocabulary).square()
         token = torch.min(token_mse, 1)[0]
-        return token
+        return token.reshape(-1)
 
     def compositional_forward(self, hidden_state):
         # predict VIB tokens until repeat or EOS token
-        batch_size = self.args.nagents
+        batch_size = self.nagents
+        if self.args.env_name == 'PascalVoc':
+            batch_size = 1
         self.decoding_mus = []
         self.decoding_log_vars = []
         Q, V = self.to_Q(hidden_state) * self.norm_factor, self.to_V(hidden_state)
@@ -252,7 +257,8 @@ class MAC(nn.Module):
         # self.noncomp_message = inde_eps * inde_std + inde_mu
         self.noncomp_message = inde_mu
 
-        self.message = message.reshape(batch_size, -1)
+        self.message = message.reshape(-1)
+        # self.message = message.reshape(batch_size, -1)
         return self.message
 
     def compositional_loss(self):
@@ -266,13 +272,15 @@ class MAC(nn.Module):
         # individual message entropy term
         for i, (mu, log_var) in enumerate(zip(self.decoding_mus, self.decoding_log_vars)):
             # discreteness
-            token_mse = (mu.reshape(self.args.nagents,1,self.composition_dim) - self.message_vocabulary).square()
+            token_mse = (mu.reshape(self.nagents,1,self.composition_dim) - self.message_vocabulary).square()
             loss += torch.min(token_mse, 1)[0].mean()
             # nonrandomness
             loss += torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim=-1))
             # indepdence term
-            mu_comp_i = mu_comp[:,i*self.composition_dim:(i+1)*self.composition_dim]
-            var_comp_i = var_comp[:,i*self.composition_dim:(i+1)*self.composition_dim]
+            # mu_comp_i = mu_comp[:,i*self.composition_dim:(i+1)*self.composition_dim]
+            # var_comp_i = var_comp[:,i*self.composition_dim:(i+1)*self.composition_dim]
+            mu_comp_i = mu_comp[i*self.composition_dim:(i+1)*self.composition_dim]
+            var_comp_i = var_comp[i*self.composition_dim:(i+1)*self.composition_dim]
             loss += torch.mean( torch.log(log_var.exp().sqrt() / var_comp_i.exp().sqrt()) + (var_comp_i.exp() + (mu_comp_i - mu)**2) / (2 * log_var.exp()) - 0.5 )
         # self-supervised EOS loss
         loss += self.EOS_token_mse_loss
