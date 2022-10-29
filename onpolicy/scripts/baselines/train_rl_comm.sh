@@ -3,7 +3,7 @@ env="PascalVoc"
 algo="r_mappo_comm"
 difficulty="easy"
 num_agents=2
-episode_length=3
+episode_length=1
 exp="rl_comm"
 seed_max=1
 
