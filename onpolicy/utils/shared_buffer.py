@@ -436,6 +436,7 @@ class SharedReplayBuffer(object):
         """
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
+        # print("shared_buffer.py", batch_size)
         data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]
         mini_batch_size = data_chunks // num_mini_batch
 
@@ -604,32 +605,34 @@ class SharedReplayBuffer(object):
         rand = torch.randperm(batch_size).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
-        # contrastive future states
         rr_masks = self.rr_masks.sum(-1)
-        print(rr_masks)
-        print(self.rr_masks.shape)
-        print(rr_masks.shape)
-        rr_indices = np.random.randint(0, np.maximum(1, rr_masks)).reshape(-1)
-        rr_indices = tuple(np.stack((np.arange(len(rr_indices)), rr_indices), 1).T)
-        rr_obs = np.zeros_like(self.obs)
-        rr_share_obs = np.zeros_like(self.share_obs)
-        rr_obs = self.rr_obs[rr_indices]
-        rr_share_obs = self.rr_share_obs[rr_indices]
+        rr_indices = np.random.randint(0, 1+np.maximum(1, rr_masks))
+        # rr_indices = tuple(np.stack((np.arange(len(rr_indices)), rr_indices), 1).T)
+        rr_obs = np.zeros_like(self.rr_obs)
+        # rr_share_obs = np.zeros_like(self.share_obs)
+        # rr_obs = self.rr_obs[rr_indices]
+        # rr_share_obs = self.rr_share_obs[rr_indices]
 
         fr_masks = self.masks.sum(-1)
         # how can we ensure this will be a future index
-        fr_indices = np.random.randint(0, fr_masks).reshape(-1)
-        fr_indices = tuple(np.stack((np.arange(len(fr_indices)), fr_indices), 1).T)
+        min_index = np.broadcast_to(np.arange(len(fr_masks)), fr_masks.transpose().shape).transpose()
+        fr_indices = np.random.randint(min_index, 1+np.maximum(min_index, fr_masks))
+        # fr_indices = tuple(np.stack((np.arange(len(fr_indices)), fr_indices), 1).T)
         fr_obs = np.zeros_like(self.obs)
-        fr_share_obs = np.zeros_like(self.share_obs)
-        fr_obs = self.obs[fr_indices]
-        fr_share_obs = self.share_obs[fr_indices]
+        # fr_share_obs = np.zeros_like(self.share_obs)
+        I,J,K = self.obs.shape[0:3]
+        for i in range(I):
+            for j in range(J):
+                for k in range(K):
+                    rr_obs[i,j,k] = self.rr_obs[rr_indices[i,j,k],j,k]
+                    fr_obs[i,j,k] = self.obs[fr_indices[i,j,k],j,k]
+        # fr_share_obs = self.share_obs[fr_indices]
 
-        rr_share_obs = rr_share_obs[:-1].reshape(-1, *rr_share_obs.shape[3:])
-        rr_obs = rr_obs[:-1].reshape(-1, *rr_obs.shape[3:])
+        # rr_share_obs = rr_share_obs[:-1].reshape(-1, *rr_share_obs.shape[3:])
+        rr_obs = _cast(rr_obs[:-1])
 
-        fr_share_obs = fr_share_obs[:-1].reshape(-1, *fr_share_obs.shape[3:])
-        fr_obs = fr_obs[:-1].reshape(-1, *fr_obs.shape[3:])
+        # fr_share_obs = fr_share_obs[:-1].reshape(-1, *fr_share_obs.shape[3:])
+        fr_obs = _cast(fr_obs[:-1])
 
         share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[3:])
         obs = self.obs[:-1].reshape(-1, *self.obs.shape[3:])
@@ -667,12 +670,12 @@ class SharedReplayBuffer(object):
                 adv_targ = advantages[indices]
 
             # contrastive rollout - random
-            rr_share_obs_batch = rr_share_obs[indices]
+            rr_share_obs_batch = rr_obs[indices]
             rr_obs_batch = rr_obs[indices]
             rr = (rr_obs_batch, rr_share_obs_batch)
             # contrastive rollout - future
             # if rr_obs_batch is not None:
-            fr_share_obs_batch = fr_share_obs[indices]
+            fr_share_obs_batch = fr_obs[indices]
             fr_obs_batch = fr_obs[indices]
             fr = (fr_obs_batch, fr_share_obs_batch)
 
