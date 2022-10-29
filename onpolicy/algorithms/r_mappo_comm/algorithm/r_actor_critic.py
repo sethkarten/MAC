@@ -118,25 +118,25 @@ class MAC_R_Actor(nn.Module):
         """
         if self.args.env_name == 'PascalVoc':
             if self.use_cnn == True:
-                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
+                obs = obs.reshape(2*self.args.n_rollout_threads, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2*self.args.n_rollout_threads, 1, 3, 375, 500)
             #AGENT 0
             # obs_copy, rnn_states_copy, masks_copy, available_actions_copy, deterministic_copy = obs, rnn_states, masks, available_actions, deterministic
-            obs0 = check(obs[0]).to(**self.tpdv)
-            rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
-            masks0 = check(masks[0]).to(**self.tpdv)
-            if available_actions[0] is not None:
-                available_actions0 = check(available_actions[0]).to(**self.tpdv)
+            obs0 = check(obs[0::2]).to(**self.tpdv)
+            rnn_states0 = check(rnn_states[0::2]).to(**self.tpdv)
+            masks0 = check(masks[0::2]).to(**self.tpdv)
+            if available_actions[0::2] is not None:
+                available_actions0 = check(available_actions[0::2]).to(**self.tpdv)
 
-            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
+            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0.reshape((-1, 3, 32, 32)))
 
             #AGENT 1
-            obs1 = check(obs[1]).to(**self.tpdv)
-            rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
-            masks1 = check(masks[1]).to(**self.tpdv)
-            if available_actions[1] is not None:
-                available_actions1 = check(available_actions[1]).to(**self.tpdv)
+            obs1 = check(obs[1::2]).to(**self.tpdv)
+            rnn_states1 = check(rnn_states[1::2]).to(**self.tpdv)
+            masks1 = check(masks[1::2]).to(**self.tpdv)
+            if available_actions[1::2] is not None:
+                available_actions1 = check(available_actions[1::2]).to(**self.tpdv)
 
-            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
+            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1.reshape((-1, 3, 32, 32)))
 
             # message encoding
 
@@ -203,9 +203,9 @@ class MAC_R_Actor(nn.Module):
         """
         if self.args.env_name == 'PascalVoc':
             if self.use_cnn == True:
-                obs0_prior = check(obs[0]).to(**self.tpdv)
-                obs1_prior = check(obs[1]).to(**self.tpdv)
-                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
+                obs0_prior = check(obs[0::2]).to(**self.tpdv)
+                obs1_prior = check(obs[1::2]).to(**self.tpdv)
+                obs = obs.reshape(2*self.args.n_rollout_threads, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2*self.args.n_rollout_threads, 1, 3, 375, 500)
             action = check(action).to(**self.tpdv)
             if available_actions is not None:
                 available_actions = check(available_actions).to(**self.tpdv)
@@ -213,22 +213,22 @@ class MAC_R_Actor(nn.Module):
                 active_masks = check(active_masks).to(**self.tpdv)
 
             #AGENT 0
-            obs0 = check(obs[0]).to(**self.tpdv)
+            obs0 = check(obs[0::2]).to(**self.tpdv)
             #rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
-            masks0 = check(masks[0]).to(**self.tpdv)
+            masks0 = check(masks[0::2]).to(**self.tpdv)
             # if available_actions[0] is not None:
             #     available_actions0 = check(available_actions[0]).to(**self.tpdv)
 
-            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
+            actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0.reshape((-1, 3, 32, 32)))
             
             #AGENT 1
-            obs1 = check(obs[1]).to(**self.tpdv)
+            obs1 = check(obs[1::2]).to(**self.tpdv)
             #rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
-            masks1 = check(masks[1]).to(**self.tpdv)
+            masks1 = check(masks[1::2]).to(**self.tpdv)
             # if available_actions[1] is not None:
             #     available_actions1 = check(available_actions[1]).to(**self.tpdv)
 
-            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
+            actor_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1.reshape((-1, 3, 32, 32)))
 
             # message encoding
 
@@ -259,7 +259,8 @@ class MAC_R_Actor(nn.Module):
             actor_features1 = torch.cat((actor_features1, agent1_message), -1)
             actor_features1 = self.decodeBase2(actor_features1)
 
-            actor_features = torch.stack((actor_features0, actor_features1))
+            # actor_features = torch.stack((actor_features0, actor_features1))
+            actor_features = torch.cat((actor_features0, actor_features1))
         else:
             obs = check(obs).to(**self.tpdv)
             rnn_states = check(rnn_states).to(**self.tpdv)
@@ -318,20 +319,20 @@ class MAC_R_Actor(nn.Module):
         """
         if self.args.env_name == 'PascalVoc':
             if self.use_cnn == True:
-                obs = obs.reshape(2, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2, 1, 3, 375, 500)
+                obs = obs.reshape(2*self.args.n_rollout_threads, 1, 3, 32, 32) if self.obs_shape[0] == 32*32*3 else obs.reshape(2*self.args.n_rollout_threads, 1, 3, 375, 500)
             #AGENT 0
-            obs0 = check(obs[0]).to(**self.tpdv)
+            obs0 = check(obs[0::2]).to(**self.tpdv)
             # rnn_states0 = check(rnn_states[0]).to(**self.tpdv)
-            masks0 = check(masks[0]).to(**self.tpdv)
+            masks0 = check(masks[0::2]).to(**self.tpdv)
 
-            critic_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0)[0]
+            critic_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0.reshape((-1, 3, 32, 32)))
 
             #AGENT 1
-            obs1 = check(obs[1]).to(**self.tpdv)
+            obs1 = check(obs[1::2]).to(**self.tpdv)
             # rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
-            masks1 = check(masks[1]).to(**self.tpdv)
+            masks1 = check(masks[1::2]).to(**self.tpdv)
 
-            critic_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1)[0]
+            critic_features1 = self.base2(obs1) if self.use_cnn == False else self.base2(obs1.reshape((-1, 3, 32, 32)))
 
             # message encoding
 
@@ -359,7 +360,7 @@ class MAC_R_Actor(nn.Module):
             value0 = self.v_out(critic_features0)
             value1 = self.v_out(critic_features1)
 
-            values = torch.stack((value0, value1))
+            values = torch.cat((value0, value1))
 
             if self.args.contrastive and r_obs is not None:
                 r_obs = check(r_obs).to(**self.tpdv)

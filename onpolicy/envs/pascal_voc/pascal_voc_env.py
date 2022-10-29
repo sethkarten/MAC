@@ -355,6 +355,7 @@ class PascalVocEnv(gym.Env):
         self.curr_iteration_idx += 1
         if self.curr_iteration_idx == self.agent_train_idxs.shape[1]:
             self.curr_iteration_idx = 0
+            self.agent_train_idxs = np.vstack((np.random.permutation(self.train_idxs), np.random.permutation(self.train_idxs)))
         self.curr_idx = self.agent_train_idxs[:, self.curr_iteration_idx]
 
         return local_obs, global_state, reward, dones, infos, available_actions
