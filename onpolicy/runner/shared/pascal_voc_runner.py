@@ -181,11 +181,19 @@ class PascalVocRunner(Runner):
                                                 np.concatenate(self.buffer.rnn_states_critic[step]),
                                                 np.concatenate(self.buffer.masks[step]),
                                                 np.concatenate(self.buffer.available_actions[step]))
-            rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads))
+            rnn_states = None
+            try:
+                rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads))
+            except:
+                rnn_states = np.array(np.split(_t2n(rnn_state), self.n_rollout_threads, axis=1))
             rnn_states_critic = np.array(np.split(rnn_state_critic, self.n_rollout_threads))
         # [self.envs, agents, dim]
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
-        actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        actions = None
+        try:
+            actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        except:
+            actions = np.array(np.split(_t2n(action), self.n_rollout_threads, axis=1))
         action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))
         if self.all_args.use_transformer_policy:
             return values, actions, action_log_probs, seq_states, seq_states_critic
@@ -212,7 +220,10 @@ class PascalVocRunner(Runner):
             seq_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.seq_states.shape[3:]), dtype=np.float32)
             seq_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.seq_states_critic.shape[3:]), dtype=np.float32)
         else:
-            rnn_states[dones_env == True][:,0,:] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            #if self.n_rollout_threads == 1:
+            rnn_states[dones_env == True][:, :, 0, :, :] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            #else:
+            #    rnn_states[dones_env == True][:,0,:] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
 
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)

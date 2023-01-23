@@ -9,6 +9,8 @@ from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 from onpolicy.algorithms.utils.comm import MAC
 import torch.nn.functional as F
+import torchvision
+
 
 class SimpleConv(nn.Module):
     def __init__(self, output_size):
@@ -28,6 +30,102 @@ class SimpleConv(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
+
+def get_resnet(name, pretrained=False):
+    resnets = {
+        'resnet18': torchvision.models.resnet18(pretrained=pretrained),
+        'resnet34': torchvision.models.resnet34(pretrained=pretrained),
+        'resnet50': torchvision.models.resnet50(pretrained=pretrained),
+        'resnet101': torchvision.models.resnet101(pretrained=pretrained),
+        'resnet152': torchvision.models.resnet152(pretrained=pretrained),
+    }
+    if name not in resnets.keys():
+        raise KeyError(f'{name} is not a valid ResNet version')
+    return resnets[name]
+
+def get_vgg(name, pretrained=False):
+    vggs = {
+        'vgg11': torchvision.models.vgg11(pretrained=pretrained),
+        'vgg11_bn': torchvision.models.vgg11_bn(pretrained=pretrained),
+        'vgg13': torchvision.models.vgg13(pretrained=pretrained),
+        'vgg13_bn': torchvision.models.vgg13_bn(pretrained=pretrained),
+        'vgg16': torchvision.models.vgg16(pretrained=pretrained),
+        'vgg16_bn': torchvision.models.vgg16_bn(pretrained=pretrained),
+        'vgg19': torchvision.models.vgg19(pretrained=pretrained),
+        'vgg19_bn': torchvision.models.vgg19_bn(pretrained=pretrained),
+    }
+    if name not in vggs.keys():
+        raise KeyError(f'{name} is not a valid VGG version')
+    return vggs[name]    
+
+class SimCLR(nn.Module):
+    """
+    We opt for simplicity and adopt the commonly used ResNet (He et al., 2016)
+    to obtain hi = f(x ̃i) = ResNet(x ̃i) where hi ∈ Rd is the output after the
+    average pooling layer.
+    """
+
+    def __init__(self, encoder_name='vgg11', projection_dim=64):
+        super(SimCLR, self).__init__()
+
+        if encoder_name.startswith('resnet'):
+            self.encoder = get_resnet(encoder_name, pretrained=True)
+        elif encoder_name.startswith('vgg'):
+            self.encoder = get_vgg(encoder_name, pretrained=True)
+        else:
+            raise NotImplementedError
+
+        #Freeze weights
+        # self.encoder.eval()
+        # for param in self.encoder.parameters():
+        #     param.requires_grad = False
+        
+        #Eval mode for BN layers
+        # def set_bn_eval(module):
+        #     if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+        #         module.eval()
+        # self.encoder.apply(set_bn_eval)
+
+        # get dimensions of last fully-connected layer of encoder
+        # (2048 for resnet50, 512 for resnet18)
+        if encoder_name.startswith('resnet'):
+            self.n_features = self.encoder.fc.in_features
+        elif encoder_name.startswith('vgg'):
+            self.n_features = self.encoder.classifier[-1].in_features
+        else:
+            raise NotImplementedError
+
+        # replace the fc layer with an Identity function
+        if encoder_name.startswith('resnet'):
+            self.encoder.fc = Identity()
+        elif encoder_name.startswith('vgg'):
+            self.encoder.classifier[-1] = Identity()
+        else:
+            raise NotImplementedError
+
+        # use a MLP with one hidden layer to obtain
+        # z_i = g(h_i) = W(2)σ(W(1)h_i) where σ is a ReLU non-linearity.
+        self.projector = nn.Sequential(
+            nn.Linear(self.n_features, self.n_features, bias=False),
+            nn.ReLU(),
+            nn.Linear(self.n_features, projection_dim, bias=False),
+        )
+
+    def forward(self, x_i):
+        h_i = self.encoder(x_i)
+        #h_j = self.encoder(x_j)
+
+        z_i = self.projector(h_i)
+        #z_j = self.projector(h_j)
+        # return h_i, z_i
+        return z_i
 
 class MAC_R_Actor(nn.Module):
     """
@@ -67,7 +165,8 @@ class MAC_R_Actor(nn.Module):
         base = CNNBase if len(obs_shape) == 3 else MLPBase
         # self.base = base(args, obs_shape)
         if args.env_name == 'PascalVoc' and self.use_cnn == True:
-            self.base = SimpleConv(self.hidden_size)
+            # self.base = SimpleConv(self.hidden_size)
+            self.base = SimCLR(projection_dim=self.hidden_size)
         else:
             self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
@@ -81,7 +180,8 @@ class MAC_R_Actor(nn.Module):
 
         if args.env_name == 'PascalVoc':
             if args.env_name == 'PascalVoc' and self.use_cnn == True:
-                self.base2 = SimpleConv(self.hidden_size)
+                # self.base2 = SimpleConv(self.hidden_size)
+                self.base2 = SimCLR(projection_dim=self.hidden_size)
             else:
                 self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
             # self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
