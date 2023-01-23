@@ -1,4 +1,7 @@
 NOTE: check pascal_voc_env for self.resize and also check r_actor_critic for use_cnn
+NOTE: forward pass for ResNet (and possibly VGG) use batch norm so setting n_rollout = n_training = 1 will fail
+NOTE: check logic in pascal_voc_runner.py to make sure changes are not incorrect
+NOTE: ResNet and VGG are pre-trained but should weights be frozen?
 # MAPPO
 
 Chao Yu*, Akash Velu*, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu.
