@@ -63,7 +63,7 @@ def get_vgg(name, pretrained=False):
     }
     if name not in vggs.keys():
         raise KeyError(f'{name} is not a valid VGG version')
-    return vggs[name]    
+    return vggs[name]
 
 class SimCLR(nn.Module):
     """
@@ -72,7 +72,7 @@ class SimCLR(nn.Module):
     average pooling layer.
     """
 
-    def __init__(self, encoder_name='vgg11', projection_dim=64):
+    def __init__(self, encoder_name='vgg11', projection_dim=128):
         super(SimCLR, self).__init__()
 
         if encoder_name.startswith('resnet'):
@@ -84,9 +84,9 @@ class SimCLR(nn.Module):
 
         #Freeze weights
         # self.encoder.eval()
-        # for param in self.encoder.parameters():
-        #     param.requires_grad = False
-        
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
         #Eval mode for BN layers
         # def set_bn_eval(module):
         #     if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
@@ -136,7 +136,7 @@ class MAC_R_Actor(nn.Module):
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
     def __init__(self, args, obs_space, action_space, device=torch.device("cpu")):
-        args.comm_dim = 64
+        args.comm_dim = 128
         self.comm_dim = args.comm_dim
         self.use_cnn = True
 
@@ -166,7 +166,7 @@ class MAC_R_Actor(nn.Module):
         # self.base = base(args, obs_shape)
         if args.env_name == 'PascalVoc' and self.use_cnn == True:
             # self.base = SimpleConv(self.hidden_size)
-            self.base = SimCLR(projection_dim=self.hidden_size)
+            self.base = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet34')
         else:
             self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
@@ -181,7 +181,7 @@ class MAC_R_Actor(nn.Module):
         if args.env_name == 'PascalVoc':
             if args.env_name == 'PascalVoc' and self.use_cnn == True:
                 # self.base2 = SimpleConv(self.hidden_size)
-                self.base2 = SimCLR(projection_dim=self.hidden_size)
+                self.base2 = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet34')
             else:
                 self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
             # self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
@@ -320,7 +320,7 @@ class MAC_R_Actor(nn.Module):
             #     available_actions0 = check(available_actions[0]).to(**self.tpdv)
 
             actor_features0 = self.base(obs0) if self.use_cnn == False else self.base(obs0.reshape((-1, 3, 32, 32)))
-            
+
             #AGENT 1
             obs1 = check(obs[1::2]).to(**self.tpdv)
             #rnn_states1 = check(rnn_states[1]).to(**self.tpdv)
@@ -349,7 +349,7 @@ class MAC_R_Actor(nn.Module):
                 decoded1 = self.decode2(agent1_message)
                 loss = nn.functional.mse_loss(decoded, obs0_prior)
                 loss += nn.functional.mse_loss(decoded1, obs1_prior)
-            
+
             agent0_message, agent1_message = agent1_message, agent0_message
 
             # AGENT 0
@@ -384,7 +384,7 @@ class MAC_R_Actor(nn.Module):
             loss = torch.tensor(0).to(**self.tpdv)
             if self.args.use_ae:
                 loss = nn.functional.mse_loss(decoded, obs)
-        
+
         if self.args.use_vib or self.args.use_vqvib: # KLD
             mu = self.communicate.decoding_mu
             log_var = self.communicate.decoding_log_var
@@ -398,7 +398,7 @@ class MAC_R_Actor(nn.Module):
             loss += self.communicate.compositional_loss()
             if self.args.env_name == 'PascalVoc':
                 loss += self.communicate2.compositional_loss()
-        
+
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
                                                                    action, available_actions,
                                                                    active_masks=

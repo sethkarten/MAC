@@ -78,8 +78,8 @@ class PascalVocEnv(gym.Env):
             self.train_dataset = data.VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
             self.val_dataset = data.VOCDetection(splits=[(2007, 'test')])
         #print(os.getcwd())
-        self.train_idxs = np.loadtxt('./onpolicy/envs/pascal_voc/train_idxs.txt')
-        # self.train_idxs = np.loadtxt('../envs/pascal_voc/train_idxs.txt')
+        # self.train_idxs = np.loadtxt('./onpolicy/envs/pascal_voc/train_idxs.txt')
+        self.train_idxs = np.loadtxt('../envs/pascal_voc/train_idxs.txt')
         self.agent_train_idxs = np.vstack((np.random.permutation(self.train_idxs), np.random.permutation(self.train_idxs)))
         self.curr_iteration_idx = 0
         self.curr_idx = self.agent_train_idxs[:, self.curr_iteration_idx]
@@ -478,11 +478,11 @@ class PascalVocEnv(gym.Env):
             #     v_sq = np.zeros_like(v_sq)
 
             if self.vocab_type == 'bool':
-                o = tuple((#act, 
+                o = tuple((#act,
                 train_image))
                 # if i == 0: print(i, act, r_i, v_sq)
             else:
-                o = tuple((#act, 
+                o = tuple((#act,
                 train_image))
             obs.append(np.concatenate(o, axis=None))
 
@@ -725,7 +725,7 @@ class PascalVocEnv(gym.Env):
         if reward[0] == 0.5 and reward[1] == 0.5:
             reward[0] = 1
             reward[1] = 1
-            
+
         # for i, l in enumerate(self.car_loc):
         #     if (len(np.where(np.all(self.car_loc[:i] == l,axis=1))[0]) or \
         #        len(np.where(np.all(self.car_loc[i+1:] == l,axis=1))[0])) and l.any():
