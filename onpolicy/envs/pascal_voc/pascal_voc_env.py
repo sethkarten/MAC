@@ -453,6 +453,7 @@ class PascalVocEnv(gym.Env):
 
             # provide current images
             train_image, train_label = self.train_dataset[int(p)]
+            train_image = mx.ndarray.cast(train_image, dtype='float32')/255.0
             train_image = data.transforms.presets.segmentation.test_transform(train_image, self.ctx)
             train_image = train_image[0].reshape(375, 500, 3)
             if self.resize == True:

@@ -72,7 +72,7 @@ class SimCLR(nn.Module):
     average pooling layer.
     """
 
-    def __init__(self, encoder_name='vgg11', projection_dim=64):
+    def __init__(self, encoder_name='resnet18', projection_dim=128):
         super(SimCLR, self).__init__()
 
         if encoder_name.startswith('resnet'):
