@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-# from models import SelfAttention
+from onpolicy.algorithms.utils.transformer import Attention
 # from network_utils import gumbel_softmax
 import numpy as np
 
@@ -29,8 +29,6 @@ class MAC(nn.Module):
         self.args = args
         self.args.comp_beta = 0.1
         self.nagents = args.num_agents
-        if args.env_name == 'PascalVoc':
-            self.nagents = 1
         self.hid_size = args.hidden_size
         self.comm_passes = args.comm_rounds
         # self.max_len = min(args.composition_dim, 10)
@@ -38,7 +36,7 @@ class MAC(nn.Module):
         self.vocab_size = args.vocab_size
         self.composition_dim = 32
         self.EPISILON = 1e-9
-        self.comm_dim = 64
+        self.comm_dim = self.args.comm_dim
         self.norm_factor = 1 / np.sqrt(self.hid_size)
 
         self.tpdv = dict(dtype=torch.float32, device=device)
@@ -80,7 +78,7 @@ class MAC(nn.Module):
 
         # attend to communications to determine relevant information
         if args.mha_comm:
-            self.attend_comm = SelfAttention(args.num_heads, args.comm_dim, dropout=self.dropout)
+            self.attend_comm = Attention(args.num_heads, args.comm_dim, dropout=self.dropout)
 
 
         self.action_gru = nn.GRU(args.comm_dim + args.hid_size, args.hid_size)
@@ -103,11 +101,11 @@ class MAC(nn.Module):
 
         # Mask for communication
         # if self.args.comm_mask_zero:
-        #     self.comm_mask = torch.zeros(self.nagents, self.nagents).to(**self.tpdv)
+        # self.comm_mask = torch.zeros(self.nagents, self.nagents).to(**self.tpdv)
         # else:
-        #     # this just prohibits self communication
-        #     self.comm_mask = (torch.ones(self.nagents, self.nagents) \
-        #                     - torch.eye(self.nagents, self.nagents)).to(**self.tpdv)
+        # this just prohibits self communication
+        self.comm_mask = (torch.ones(self.nagents, self.nagents) \
+                        - torch.eye(self.nagents, self.nagents)).to(**self.tpdv)
 
 
         self.apply(self.init_weights)
@@ -116,41 +114,58 @@ class MAC(nn.Module):
         #     torch.nn.init.zeros_(self.fc_mu.weight)
         #     torch.nn.init.zeros_(self.fc_var.weight)
 
+    def forward(self, comm, info={}):
+        comm_encoding = self.default_forward(comm)
+        return self.communicate(comm_encoding, info)
 
-    def communicate(self, comm, info):
+    def communicate(self, comm, info={}):
+        # print('before',comm, comm.shape)
         n = self.nagents
+        comm = comm.reshape(-1, n, self.args.comm_dim)
+        # print('reshape', comm)
+        b = len(comm)
+        # print(comm.shape)
         '''Mask Communication'''
         # mask 1) input communication
         mask = self.comm_mask.view(n, n)
 
         # 2) Mask communcation from dead agents, 3) communication to dead agents
-        num_agents_alive, agent_mask = self.get_agent_mask(self.max_len, info)
+        num_agents_alive, agent_mask = self.get_agent_mask(b, info)
         # gating sparsity mask
-        agent_mask, comm_action, comm_prob = self.get_gating_mask(comm, agent_mask)
-        info['comm_action'] = comm_action.detach().numpy()
+        # agent_mask, comm_action, comm_prob = self.get_gating_mask(comm, agent_mask)
+        # info['comm_action'] = comm_action.detach().numpy()
 
         # Mask 1) input communication 2) Mask communcation from dead agents, 3) communication to dead agents
         comm_out_mask = mask * agent_mask * agent_mask.transpose(0, 1)
 
         '''Perform communication'''
         # doing cts communication vectors only right now
-        comm  = comm.view(n, self.args.comm_dim)
-        comm = comm.unsqueeze(-2).expand(n, n, self.args.comm_dim)
+        comm  = comm.view(b, n, self.args.comm_dim)
+        comm = comm.unsqueeze(-2).expand(b, n, n, self.args.comm_dim)
         # print(comm_out_mask.unsqueeze(-1).shape, comm.shape)
         comm = comm * comm_out_mask.unsqueeze(-1).expand_as(comm)
-
-        if not self.args.mha_comm:
+        # print(comm.shape)
+        if self.args.mha_comm:
+            comm = self.attend_comm(comm.view(b,n,n,self.args.comm_dim).transpose(2,1), mask=self.comm_mask.view(n, n), is_comm=True)
+        else:
             if hasattr(self.args, 'comm_mode') and self.args.comm_mode == 'avg' \
                 and num_agents_alive > 1:
                 comm = comm / (num_agents_alive - 1)
-
-        return comm, comm_prob, comm_out_mask
+            comm = comm.sum(dim=1)
+        # print(comm.shape)
+        comm = comm.reshape(-1, self.comm_dim)
+        # print('after', comm, comm.shape)
+        return comm #, comm_prob, comm_out_mask
 
     def do_embed(self, x):
         x, extras = x
         x = self.embed(x)
         hidden_state_message, hidden_state_action = extras
         return x, hidden_state_message, hidden_state_action
+
+    def default_forward(self, hidden_state):
+        self.message = self.message_generation(hidden_state)
+        return self.message
 
     def ae_forward(self, hidden_state):
         self.message = self.message_generation(hidden_state)
@@ -316,10 +331,10 @@ class MAC(nn.Module):
         n = self.nagents
 
         if 'alive_mask' in info:
-            agent_mask = torch.from_numpy(info['alive_mask'])
+            agent_mask = torch.from_numpy(info['alive_mask']).to(**self.tpdv)
             num_agents_alive = agent_mask.sum()
         else:
-            agent_mask = torch.ones(n)
+            agent_mask = torch.ones(n).to(**self.tpdv)
             num_agents_alive = n
 
         agent_mask = agent_mask.view(1, n)
@@ -345,3 +360,38 @@ class MAC(nn.Module):
     def init_weights(self, m):
         if isinstance(m, nn.Linear):
             self.init_layer(m)
+
+if __name__ == '__main__':
+
+    comm = torch.tensor([[1,1],[2,2],[3,3]])
+    n = 3
+    comm_dim = 2
+    comm = comm.reshape(-1, n, comm_dim)
+    b = len(comm)
+    # print(comm.shape)
+    '''Mask Communication'''
+    # mask 1) input communication
+    comm_mask = (torch.ones(n, n) \
+                        - torch.eye(n, n))
+    mask = comm_mask.view(n, n)
+
+    # 2) Mask communcation from dead agents, 3) communication to dead agents
+    agent_mask = torch.ones(n)
+    num_agents_alive = n
+    agent_mask = agent_mask.view(1, n)
+    agent_mask = agent_mask.expand(n, n)
+
+    # Mask 1) input communication 2) Mask communcation from dead agents, 3) communication to dead agents
+    comm_out_mask = mask * agent_mask * agent_mask.transpose(0, 1)
+
+    '''Perform communication'''
+    # doing cts communication vectors only right now
+    comm  = comm.view(b, n, comm_dim)
+    comm = comm.unsqueeze(-2).expand(b, n, n, comm_dim)
+    # print(comm_out_mask.unsqueeze(-1).shape, comm.shape)
+    comm = comm * comm_out_mask.unsqueeze(-1).expand_as(comm)
+    # print(comm.shape)
+    comm = comm.sum(dim=1)
+    # print(comm.shape)
+    print( comm.reshape(-1, comm_dim) )
+    

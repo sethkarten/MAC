@@ -63,7 +63,7 @@ def parse_args(args, parser):
     env.add_argument('--vocab_type', type=str, default='bool',
                      help="Type of location vector to use, bool|scalar")
     # updated curriculum parameters
-    env.add_argument('--curr_start_epoch', type=float, default=-1.,
+    env.add_argument('--curr_start_epoch', type=float, default=10.,
                      help="start making harder after this many epochs [0]")
     env.add_argument('--curr_epochs', type=float, default=1000.,
                      help="Number of epochs of curriculum for when to make the game hardest [0]")
@@ -74,7 +74,7 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
 
-    if all_args.algorithm_name == "r_mappo_comm":
+    if all_args.algorithm_name == "r_mappo_comm" or all_args.algorithm_name == "macppo":
         assert (all_args.use_recurrent_policy or all_args.use_naive_recurrent_policy), ("check recurrent policy!")
     elif all_args.algorithm_name == "mappo_comm":
         assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), (

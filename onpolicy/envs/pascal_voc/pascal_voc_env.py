@@ -722,7 +722,8 @@ class PascalVocEnv(gym.Env):
             train_image, train_label = self.train_dataset[int(p)]
             # if self.label_dict.get(act) in np.unique(train_label[:, 4:5]):
             #     reward[i] += 0.5
-            reward[i] += (np.intersect1d(self.label_dict.get(act), np.unique(train_label[:, 4:5])).size)*0.25
+            # reward[i] += (np.intersect1d(self.label_dict.get(act), np.unique(train_label[:, 4:5])).size)*0.25
+            reward[i] += (np.intersect1d(self.label_dict.get(act), np.unique(train_label[:, 4:5])).size)*0.75*0.5
         if reward[0] == 0.5 and reward[1] == 0.5:
             reward[0] = 1
             reward[1] = 1

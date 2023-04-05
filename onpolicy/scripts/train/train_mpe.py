@@ -65,7 +65,7 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
 
-    if all_args.algorithm_name == "rmappo":
+    if all_args.algorithm_name == "r_mappo" or all_args.algorithm_name == "macppo":
         assert (all_args.use_recurrent_policy or all_args.use_naive_recurrent_policy), ("check recurrent policy!")
     elif all_args.algorithm_name == "mappo":
         assert (all_args.use_recurrent_policy == False and all_args.use_naive_recurrent_policy == False), ("check recurrent policy!")
