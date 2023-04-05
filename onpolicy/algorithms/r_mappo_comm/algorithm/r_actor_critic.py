@@ -85,7 +85,7 @@ class SimCLR(nn.Module):
         #Freeze weights
         # self.encoder.eval()
         for param in self.encoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
         #Eval mode for BN layers
         # def set_bn_eval(module):
@@ -166,7 +166,7 @@ class MAC_R_Actor(nn.Module):
         # self.base = base(args, obs_shape)
         if args.env_name == 'PascalVoc' and self.use_cnn == True:
             # self.base = SimpleConv(self.hidden_size)
-            self.base = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet34')
+            self.base = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet18')
         else:
             self.base = nn.Linear(obs_shape[0], self.hidden_size)
 
@@ -181,7 +181,7 @@ class MAC_R_Actor(nn.Module):
         if args.env_name == 'PascalVoc':
             if args.env_name == 'PascalVoc' and self.use_cnn == True:
                 # self.base2 = SimpleConv(self.hidden_size)
-                self.base2 = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet34')
+                self.base2 = SimCLR(projection_dim=self.hidden_size, encoder_name='resnet18')
             else:
                 self.base2 = nn.Linear(obs_shape[0], self.hidden_size)
             # self.rnn2 = RNNLayer(self.hidden_size*2, self.hidden_size, self._recurrent_N, self._use_orthogonal)
@@ -457,8 +457,9 @@ class MAC_R_Actor(nn.Module):
             critic_features1 = torch.cat((critic_features1, agent1_message), -1)
             critic_features1 = self.decodeBase2(critic_features1)
 
-            value0 = self.v_out(critic_features0)
-            value1 = self.v_out(critic_features1)
+            # note that these are swapped for a test
+            value0 = self.v_out(critic_features1)
+            value1 = self.v_out(critic_features0)
 
             values = torch.cat((value0, value1))
 

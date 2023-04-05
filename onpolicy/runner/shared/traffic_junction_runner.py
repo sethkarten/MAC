@@ -89,14 +89,14 @@ class TrafficJunctionRunner(Runner):
 
                 if self.env_name == "TrafficJunction":
                     success_rate = np.mean(success / success_eps)
-                    if success_rate > self.best:
+                    if success_rate >= self.best:
                         self.best = success_rate
                         self.save_best()
-                    if success_rate >= .97:
-                        # decrease learning rate significantly
-                        print("Setting lr to 1e-5")
-                        set_lr(self.trainer.policy.actor_optimizer, 1e-5)
-                        set_lr(self.trainer.policy.critic_optimizer, 1e-5)
+                    # if success_rate >= .97:
+                    #     # decrease learning rate significantly
+                    #     print("Setting lr to 1e-7")
+                    #     set_lr(self.trainer.policy.actor_optimizer, 1e-7)
+                    #     set_lr(self.trainer.policy.critic_optimizer, 1e-7)
                     success = np.zeros(self.n_rollout_threads)
                     success_eps = 0
                     print("Success rate is {}.".format(success_rate))

@@ -127,14 +127,14 @@ class SharedReplayBuffer(object):
             self.seq_states[self.step + 1] = states_actor.copy()
             self.seq_states_critic[self.step + 1] = states_critic.copy()
         else:
-            self.rnn_states[self.step + 1] = states_actor[:,0,:].copy()
+            self.rnn_states[self.step + 1] = states_actor.copy()
             self.rnn_states_critic[self.step + 1] = states_critic.copy()
-        self.actions[self.step] = actions[:,0,:].copy()
-        self.action_log_probs[self.step] = action_log_probs[:,0,:].copy()
-        try:
-            self.value_preds[self.step] = value_preds[:,0,:].copy()
-        except:
-            self.value_preds[self.step] = value_preds.copy()
+        self.actions[self.step] = actions.copy()
+        self.action_log_probs[self.step] = action_log_probs.copy()
+        # try:
+        #     self.value_preds[self.step] = value_preds[:,0,:].copy()
+        # except:
+        self.value_preds[self.step] = value_preds.copy()
         self.rewards[self.step] = rewards.copy()
         self.masks[self.step + 1] = masks.copy()
         if bad_masks is not None:

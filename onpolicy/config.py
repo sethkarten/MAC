@@ -158,7 +158,7 @@ def get_config():
 
     # prepare parameters
     parser.add_argument("--algorithm_name", type=str,
-                        default='mappo', choices=["r_mappo_comm", "t_mappo_comm", "r_mappo", "mappo"])
+                        default='mappo', choices=["r_mappo_comm", "t_mappo_comm", "r_mappo", "mappo", "macppo"])
 
     parser.add_argument("--experiment_name", type=str, default="check", help="an identifier to distinguish different experiment.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
@@ -191,13 +191,15 @@ def get_config():
     parser.add_argument("--share_policy", action='store_false',
                         default=True, help='Whether agent share the same policy')
     parser.add_argument("--use_centralized_V", action='store_false',
-                        default=False, help="Whether to use centralized V function")
+                        default=True, help="Whether to use centralized V function")
     parser.add_argument("--stacked_frames", type=int, default=1,
                         help="Dimension of hidden layers for actor/critic networks")
     parser.add_argument("--use_stacked_frames", action='store_true',
                         default=False, help="Whether to use stacked_frames")
     parser.add_argument("--hidden_size", type=int, default=64,
                         help="Dimension of hidden layers for actor/critic networks")
+    parser.add_argument("--comm_dim", type=int, default=64,
+                        help="Dimension of communication layers for actor/critic networks")
     parser.add_argument("--layer_N", type=int, default=0,
                         help="Number of layers for actor/critic networks")
     parser.add_argument("--use_ReLU", action='store_false',
@@ -222,7 +224,7 @@ def get_config():
 
     # transformer parameters
     parser.add_argument("--use_transformer_policy", action='store_false',
-        default=True, help='use a transformer policy')
+        default=False, help='use a transformer policy')
     parser.add_argument("--transformer_heads", type=int, default=1, help="The number of attention heads.")
     parser.add_argument("--mha_comm", action='store_false',
         default=True, help='use a multi-headed attention when receiving communication')
