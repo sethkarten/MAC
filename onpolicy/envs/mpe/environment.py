@@ -17,9 +17,10 @@ class MultiAgentEnv(gym.Env):
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, post_step_callback=None,
-                 shared_viewer=True, discrete_action=True):
+                 shared_viewer=True, discrete_action=True, args=None):
 
         self.world = world
+        self.args = args
         self.world_length = self.world.world_length
         self.current_step = 0
         self.agents = self.world.policy_agents
@@ -123,7 +124,11 @@ class MultiAgentEnv(gym.Env):
         self.agents = self.world.policy_agents
         # set action for each agent
         for i, agent in enumerate(self.agents):
-            self._set_action(action_n[i], agent, self.action_space[i])
+            if self.args.scenario_name == 'simple_adaptive_sampling':
+                agent.state.A = action_n[i][-world.env_size*world.env_size:].copy().reshape(world.env_size, world.env_size)
+                self._set_action(action_n[i][:-world.env_size*world.env_size], agent, self.action_space[i])
+            else:
+                self._set_action(action_n[i], agent, self.action_space[i])
         # advance world state
         self.world.step()  # core.step()
         # record observation for each agent
