@@ -3,16 +3,32 @@ from onpolicy.envs.mpe.core import World, Agent, AgentState
 from onpolicy.envs.mpe.scenario import BaseScenario
 from scipy import signal
 
+import numpy as np
+
+from matplotlib import pyplot as plt
+
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+
+from typing import List
+
+from scipy.stats import multivariate_normal
+
+from GP_mixture import mix_GPs
+
+ENV_SIZE = 16
+
 class AdaptiveSamplingAgentState(AgentState):
     def __init__(self):
         super(AdaptiveSamplingAgentState, self).__init__()
         # Current Agent Belief of World State
-        self.A = np.zeros((16, 16))
+        self.env_size = ENV_SIZE
+        self.A = np.zeros((self.env_size, self.env_size))
 
 class AdaptiveSamplingWorld(World):
     def __init__(self):
         super(AdaptiveSamplingWorld, self).__init__()
-        self.env_size = 16
+        self.env_size = ENV_SIZE
         N = 7   # kernel size
         k1d = signal.gaussian(N, std=1).reshape(N, 1)
         kernel = np.outer(k1d, k1d)
@@ -38,6 +54,23 @@ class AdaptiveSamplingAgent(Agent):
     def __init__(self):
         super(AdaptiveSamplingAgent, self).__init__()
         self.state = AdaptiveSamplingAgentState()
+        self.env_size = ENV_SIZE
+        # Specify kernel with initial hyperparameter estimates
+        def kernel_initial(
+                σf_initial=1.0,         # covariance amplitude
+                ell_initial=1.0,        # length scale
+                σn_initial=0.1          # noise level
+                ):
+            return σf_initial**2 * RBF(length_scale=ell_initial) + WhiteKernel(noise_level=σn_initial)
+        self.gp = GaussianProcessRegressor(kernel=kernel_initial(), n_restarts_optimizer=10)
+        x_min = (0, 0)
+        x_max = (self.env_size, self.env_size)
+        n_train = 30
+        x = np.random.choice(x_max[0], size=(n_train, 1))
+        y = np.random.choice(x_max[1], size=(n_train, 1))
+        self.X_train = np.hstack((x, y))
+        # self.y_train = A[self.X_train[:,0], self.X_train[:,1]]
+        self.y_train = None
 
 class Scenario(BaseScenario):
     def make_world(self):
@@ -83,6 +116,7 @@ class Scenario(BaseScenario):
         #     landmark.movable = False
         # make initial conditions
         self.reset_world(world)
+        self.use_GP = True
         return world
     
     def reset_world(self, world):
@@ -116,5 +150,24 @@ class Scenario(BaseScenario):
     
     def observation(self, agent, world):
         loc = (agent.state.p_pos + 1)*(world.env_size//2)
-        loc = tuple(loc.round())
+        loc = loc.round().astype(int)
+        # loc = tuple(loc.round())
+        if self.use_GP:
+            agent.X_train = np.vstack((agent.X_train, loc))
+            agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
+            agent.gp.fit(agent.X_train, agent.y_train)
+            GPs = []
+            for i, agent in enumerate(world.agents):
+                GPs.append(agent.gp)
+            GP_mixture_model = mix_GPs(GPs)
+            X_test_x = np.arange(world.env_size)
+            X_test_y = np.arange(world.env_size)
+            X_test_xx, X_test_yy = np.meshgrid(X_test_x, X_test_y)
+            X_test = np.vstack(np.dstack((X_test_xx, X_test_yy)))
+            μ_test, σ_test = GP_mixture_model(X_test)
+            μ_test_2D = μ_test.reshape((world.env_size, world.env_size))
+            σ_test_2D = σ_test.reshape((world.env_size, world.env_size))
+            agent.state.A = μ_test_2D
+
+        loc = tuple(loc)
         return world.A[loc]
