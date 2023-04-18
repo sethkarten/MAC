@@ -16,6 +16,9 @@ from scipy.stats import multivariate_normal
 
 from onpolicy.envs.mpe.scenarios.GP_mixture import mix_GPs
 
+import warnings
+warnings.filterwarnings(action='ignore')
+
 ENV_SIZE = 16
 
 class AdaptiveSamplingAgentState(AgentState):

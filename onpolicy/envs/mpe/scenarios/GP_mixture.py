@@ -9,6 +9,8 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 
 from typing import List
 
+import warnings
+warnings.filterwarnings(action='ignore')
 
 def sklearn2custom(gp_sklearn: GaussianProcessRegressor):
     """
@@ -81,7 +83,7 @@ def mix_GPs(GPs_sklearn: List[GaussianProcessRegressor]):
             n_restarts_optimizer=10
         )
         gp.fit(X_train_combined, P_z[:,i])
-        print(gp.kernel_)
+        # print(gp.kernel_)
         gating_GPs.append(gp)
 
 
