@@ -14,7 +14,7 @@ from typing import List
 
 from scipy.stats import multivariate_normal
 
-from GP_mixture import mix_GPs
+from onpolicy.envs.mpe.scenarios.GP_mixture import mix_GPs
 
 ENV_SIZE = 16
 
@@ -51,7 +51,7 @@ class AdaptiveSamplingWorld(World):
         self.A = A1 + A2 + A3
 
 class AdaptiveSamplingAgent(Agent):
-    def __init__(self):
+    def __init__(self, world):
         super(AdaptiveSamplingAgent, self).__init__()
         self.state = AdaptiveSamplingAgentState()
         self.env_size = ENV_SIZE
@@ -69,11 +69,11 @@ class AdaptiveSamplingAgent(Agent):
         x = np.random.choice(x_max[0], size=(n_train, 1))
         y = np.random.choice(x_max[1], size=(n_train, 1))
         self.X_train = np.hstack((x, y))
-        # self.y_train = A[self.X_train[:,0], self.X_train[:,1]]
-        self.y_train = None
+        self.y_train = world.A[self.X_train[:,0], self.X_train[:,1]]
+        # self.y_train = None
 
 class Scenario(BaseScenario):
-    def make_world(self):
+    def make_world(self, args):
         # N = 7   # kernel size
         # k1d = signal.gaussian(N, std=1).reshape(N, 1)
         # kernel = np.outer(k1d, k1d)
@@ -102,7 +102,7 @@ class Scenario(BaseScenario):
         # num_landmarks = 3
         world.collaborative = True
         # add agents
-        world.agents = [Agent() for i in range(num_agents)]
+        world.agents = [AdaptiveSamplingAgent(world) for i in range(num_agents)]
         for i, agent in enumerate(world.agents):
             agent.name = 'agent %d' % i
             agent.collide = True
@@ -155,9 +155,9 @@ class Scenario(BaseScenario):
         if self.use_GP:
             agent.X_train = np.vstack((agent.X_train, loc))
             agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
-            agent.gp.fit(agent.X_train, agent.y_train)
             GPs = []
             for i, agent in enumerate(world.agents):
+                agent.gp.fit(agent.X_train, agent.y_train)
                 GPs.append(agent.gp)
             GP_mixture_model = mix_GPs(GPs)
             X_test_x = np.arange(world.env_size)
@@ -170,4 +170,4 @@ class Scenario(BaseScenario):
             agent.state.A = μ_test_2D
 
         loc = tuple(loc)
-        return world.A[loc]
+        return [world.A[loc]]

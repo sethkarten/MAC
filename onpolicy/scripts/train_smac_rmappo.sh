@@ -13,5 +13,5 @@ do
     --map_name ${map} --seed ${seed} --n_training_threads 32 --n_rollout_threads 16 \
     --num_mini_batch 1 --episode_length 120 --num_env_steps 10000000 --ppo_epoch 5 \
     --use_value_active_masks \
-    --use_recurrent_policy --use_transformer_policy
+    --use_recurrent_policy
 done
