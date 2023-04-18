@@ -74,6 +74,7 @@ class AdaptiveSamplingAgent(Agent):
         self.X_train = np.hstack((x, y))
         self.y_train = world.A[self.X_train[:,0], self.X_train[:,1]]
         # self.y_train = None
+        # print('init agent')
 
 class Scenario(BaseScenario):
     def make_world(self, args):
@@ -120,6 +121,7 @@ class Scenario(BaseScenario):
         # make initial conditions
         self.reset_world(world)
         self.use_GP = True
+        # print('init world')
         return world
     
     def reset_world(self, world):
@@ -137,11 +139,12 @@ class Scenario(BaseScenario):
         # for i, landmark in enumerate(world.landmarks):
         #     landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
         #     landmark.state.p_vel = np.zeros(world.dim_p)
+        # print('reset world')
     
     def reward(self, agent, world):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         # Agents rewarded on how accurate agent reconstruction of world model is
-        rew = np.sum((agent.state.A - world.A)**2)
+        rew = -np.sum((agent.state.A - world.A)**2)
         # for l in world.landmarks:
         #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
         #     rew -= min(dists)
@@ -149,6 +152,7 @@ class Scenario(BaseScenario):
         #     for a in world.agents:
         #         if self.is_collision(a, agent):
         #             rew -= 1
+        # print(rew)
         return rew
     
     def observation(self, agent, world):
