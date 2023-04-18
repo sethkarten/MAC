@@ -27,6 +27,7 @@ class AdaptiveSamplingAgentState(AgentState):
         # Current Agent Belief of World State
         self.env_size = ENV_SIZE
         self.A = np.zeros((self.env_size, self.env_size))
+        # print('init agent state')
 
 class AdaptiveSamplingWorld(World):
     def __init__(self):
@@ -75,6 +76,24 @@ class AdaptiveSamplingAgent(Agent):
         self.y_train = world.A[self.X_train[:,0], self.X_train[:,1]]
         # self.y_train = None
         # print('init agent')
+    
+    def reset_agent(self, world):
+        # Specify kernel with initial hyperparameter estimates
+        def kernel_initial(
+                σf_initial=1.0,         # covariance amplitude
+                ell_initial=1.0,        # length scale
+                σn_initial=0.1          # noise level
+                ):
+            return σf_initial**2 * RBF(length_scale=ell_initial) + WhiteKernel(noise_level=σn_initial)
+        self.gp = GaussianProcessRegressor(kernel=kernel_initial(), n_restarts_optimizer=10)
+        x_min = (0, 0)
+        x_max = (self.env_size, self.env_size)
+        n_train = 30
+        x = np.random.choice(x_max[0], size=(n_train, 1))
+        y = np.random.choice(x_max[1], size=(n_train, 1))
+        self.X_train = np.hstack((x, y))
+        self.y_train = world.A[self.X_train[:,0], self.X_train[:,1]]
+        # print('reset agent')
 
 class Scenario(BaseScenario):
     def make_world(self, args):
@@ -100,6 +119,7 @@ class Scenario(BaseScenario):
         # self.A = A1 + A2 + A3
 
         world = AdaptiveSamplingWorld()
+        world.world_length = args.episode_length
         # set any world properties first
         world.dim_c = 2
         num_agents = 3
@@ -133,6 +153,7 @@ class Scenario(BaseScenario):
         #     landmark.color = np.array([0.25, 0.25, 0.25])
         # set random initial states
         for agent in world.agents:
+            agent.reset_agent(world)
             agent.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
@@ -156,16 +177,17 @@ class Scenario(BaseScenario):
         return rew
     
     def observation(self, agent, world):
-        loc = (agent.state.p_pos + 1)*(world.env_size//2)
-        loc = loc.round().astype(int)
+        loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
+        # loc = loc.round().astype(int)
+        loc = np.trunc(loc).astype(int)
         # loc = tuple(loc.round())
         if self.use_GP:
             agent.X_train = np.vstack((agent.X_train, loc))
             agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
             GPs = []
-            for i, agent in enumerate(world.agents):
-                agent.gp.fit(agent.X_train, agent.y_train)
-                GPs.append(agent.gp)
+            for i, a in enumerate(world.agents):
+                a.gp.fit(a.X_train, a.y_train)
+                GPs.append(a.gp)
             GP_mixture_model = mix_GPs(GPs)
             X_test_x = np.arange(world.env_size)
             X_test_y = np.arange(world.env_size)
@@ -177,4 +199,13 @@ class Scenario(BaseScenario):
             agent.state.A = μ_test_2D
 
         loc = tuple(loc)
+        # communication of all other agents
+        comm = []
+        other_pos = []
+        for other in world.agents:
+            if other is agent:
+                continue
+            comm.append(other.state.c)
+            other_pos.append(other.state.p_pos - agent.state.p_pos)
+        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [[world.A[loc]]] + other_pos + comm)
         return [world.A[loc]]

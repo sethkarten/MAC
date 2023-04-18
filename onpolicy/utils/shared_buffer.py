@@ -97,13 +97,15 @@ class SharedReplayBuffer(object):
                                         num_agents, self.args.lookahead, *share_obs_shape), dtype=np.float32)
         # self.fr_masks = np.ones((self.episode_length + 1, self.n_rollout_threads,
         #                             num_agents, self.args.lookahead, 1), dtype=np.float32)
+        self.agent_world = np.zeros((self.episode_length + 1, self.n_rollout_threads,
+                                     num_agents, 16*16), dtype=np.float32)
 
         self.step = 0
 
     def insert(self, share_obs, obs, states_actor, states_critic,
                actions, action_log_probs, value_preds, rewards, masks,
                bad_masks=None, active_masks=None, available_actions=None,
-               _rr_obs=None, _rr_share_obs=None, _rr_masks=None):
+               _rr_obs=None, _rr_share_obs=None, _rr_masks=None, reconstructions=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -148,6 +150,9 @@ class SharedReplayBuffer(object):
             self.rr_obs[self.step] = _rr_obs.copy()
             # self.rr_share_obs[self.step] = _rr_share_obs.copy()
             self.rr_masks[self.step] = _rr_masks.copy()
+        
+        if reconstructions is not None:
+            self.agent_world[self.step] = reconstructions.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
