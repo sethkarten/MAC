@@ -149,10 +149,10 @@ class MAC(nn.Module):
         comm = comm * comm_out_mask.unsqueeze(-1).expand_as(comm)
         # print(comm.shape)
         if self.args.mha_comm:
-            Q = comm.view(b,n,n,self.args.comm_dim).transpose(2,1).view(b*n,n,self.args.comm_dim)
+            Q = comm.view(b,n,n,self.args.comm_dim).transpose(2,1).view(b,n,n,self.args.comm_dim)
             K = Q
             V = Q
-            comm = self.attend_comm(Q, K, V, mask=self.comm_mask.view(b*n, n), is_comm=True)
+            comm = self.attend_comm(Q, K, V, mask=comm_out_mask, is_comm=True)
         else:
             if hasattr(self.args, 'comm_mode') and self.args.comm_mode == 'avg' \
                 and num_agents_alive > 1:
