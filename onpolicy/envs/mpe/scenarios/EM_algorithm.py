@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import norm
 
+import warnings
+warnings.filterwarnings(action='ignore')
 
 def gaussian_pdf(mean, var, y):
     return norm(mean, np.sqrt(var)).pdf(y)

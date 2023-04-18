@@ -2,6 +2,9 @@ import numpy as np
 import scipy
 
 
+import warnings
+warnings.filterwarnings(action='ignore')
+
 def rbf_kernel(x1, x2, σf=1.0, l=1.0):
     sq_norm = scipy.spatial.distance.cdist(x1, x2, "sqeuclidean")
     return σf**2 * np.exp(-sq_norm / (2 * l**2))

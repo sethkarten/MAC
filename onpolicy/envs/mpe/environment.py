@@ -108,6 +108,8 @@ class MultiAgentEnv(gym.Env):
             self.viewers = [None] * self.n
         self._reset_render()
 
+        # self.action_space.nvec = action_space.high - action_space.low + 1
+
     def seed(self, seed=None):
         if seed is None:
             np.random.seed(1)
@@ -124,11 +126,11 @@ class MultiAgentEnv(gym.Env):
         self.agents = self.world.policy_agents
         # set action for each agent
         for i, agent in enumerate(self.agents):
-            if self.args.scenario_name == 'simple_adaptive_sampling':
-                agent.state.A = action_n[i][-world.env_size*world.env_size:].copy().reshape(world.env_size, world.env_size)
-                self._set_action(action_n[i][:-world.env_size*world.env_size], agent, self.action_space[i])
-            else:
-                self._set_action(action_n[i], agent, self.action_space[i])
+            # if self.args.scenario_name == 'simple_adaptive_sampling':
+            #     agent.state.A = action_n[i][-world.env_size*world.env_size:].copy().reshape(world.env_size, world.env_size)
+            #     self._set_action(action_n[i][:-world.env_size*world.env_size], agent, self.action_space[i])
+            # else:
+            self._set_action(action_n[i], agent, self.action_space[i])
         # advance world state
         self.world.step()  # core.step()
         # record observation for each agent
