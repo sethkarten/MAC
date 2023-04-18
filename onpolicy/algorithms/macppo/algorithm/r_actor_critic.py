@@ -58,6 +58,8 @@ class MAC_R_Actor(nn.Module):
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
+        self.reconstruct = nn.Linear(self.hidden_size, 16*16)
+
         # autoencoder
         if self.args.use_ae:
             self.decode = nn.Linear(self.comm_dim, obs_shape[0])
@@ -101,7 +103,10 @@ class MAC_R_Actor(nn.Module):
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
 
-        return actions, action_log_probs, rnn_states
+        # reconstruction of env
+        reconstruction = self.reconstruct(actor_features)
+
+        return actions, action_log_probs, rnn_states, reconstruction
 
     def evaluate_actions(self, obs, rnn_states, action, masks, available_actions=None, active_masks=None):
         """
