@@ -1,9 +1,9 @@
 import numpy as np
-import scipy
+from scipy.stats import norm
 
 
 def gaussian_pdf(mean, var, y):
-    return scipy.stats.norm(mean, np.sqrt(var)).pdf(y)
+    return norm(mean, np.sqrt(var)).pdf(y)
 
 
 def E_stage(X_train_combined, y_train_combined, GPs, P_z):

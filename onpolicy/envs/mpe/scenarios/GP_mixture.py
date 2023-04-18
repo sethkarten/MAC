@@ -1,5 +1,5 @@
-from EM_algorithm import EM_algorithm
-from GP import GP
+from onpolicy.envs.mpe.scenarios.EM_algorithm import EM_algorithm
+from onpolicy.envs.mpe.scenarios.GP import GP
 
 import numpy as np
 

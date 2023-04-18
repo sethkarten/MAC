@@ -43,6 +43,9 @@ class MAC(nn.Module):
         # embedding for one hot encoding of inputs
         self.embed = nn.Linear(num_inputs, args.hid_size)
 
+        self._gain = args.gain
+        self._active_func = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
+
         # message action generation
         # self.init_hidden(args.batch_size)
         # # self.message_gru = nn.GRU(args.hid_size, args.hid_size)
@@ -78,7 +81,7 @@ class MAC(nn.Module):
 
         # attend to communications to determine relevant information
         if args.mha_comm:
-            self.attend_comm = Attention(args.num_heads, args.comm_dim, dropout=self.dropout)
+            self.attend_comm = Attention(args.transformer_heads, args.comm_dim, self._active_func, self._gain, args, dropout=self.dropout)
 
 
         self.action_gru = nn.GRU(args.comm_dim + args.hid_size, args.hid_size)
@@ -89,7 +92,7 @@ class MAC(nn.Module):
             self.decoder_head = nn.Linear(args.comm_dim, num_inputs)
 
         # attend to latent obs/intent/comm to produce action
-        # self.attend_action = SelfAttention(args.num_heads, args.hid_size)
+        # self.attend_action = SelfAttention(args.transformer_heads, args.hid_size)
         # print(args.num_actions)
         # self.action_head = nn.Linear(self.hid_size, args.num_actions[0])
 
