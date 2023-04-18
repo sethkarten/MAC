@@ -73,28 +73,29 @@ class Attention(nn.Module):
             self.dropout = nn.Dropout(dropout)
 
         def forward(self, Q, K, V, mask=None, is_comm=False):
-            b, t, e = Q.shape   # batch size (number of agents), number or comms / steps, embedding size
+            b, n, t, e = Q.shape   # batch size, number of agents, number or comms / steps, embedding size
             h = self.transformer_heads
-            Q = self.toQ(Q).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
-            K = self.toK(K).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
-            V = self.toV(V).view(b, t, h, e).transpose(1,2).reshape(b*h,t,e)
+            Q = self.toQ(Q).view(b, n, t, h, e).transpose(1,2).reshape(b*n*h,t,e)
+            K = self.toK(K).view(b, n, t, h, e).transpose(1,2).reshape(b*n*h,t,e)
+            V = self.toV(V).view(b, n, t, h, e).transpose(1,2).reshape(b*n*h,t,e)
             Q = Q * self.norm_factor
             K = K * self.norm_factor
             dot = torch.bmm(Q, K.transpose(1, 2))
-            assert dot.size() == (b * h, t, t)
+            assert dot.size() == (b * n * h, t, t)
             if mask is not None:
                 # mask again before softmax
                 # repeat for number of heads
-                # mask = mask.repeat_interleave(repeats=b*h, dim=0)
+                # mask = mask.repeat_interleave(repeats=n*h, dim=0)
                 if not is_comm:
                     mask = mask.unsqueeze(-1).expand_as(dot)
                 dot = dot * mask
                 dot = dot.masked_fill(dot == 0, -1e9)
 
             attn = F.softmax(dot, dim=-1)
-            out = torch.bmm(attn, V).view(b, h, t, e)
-            out = out.transpose(1, 2).contiguous().view(b, t, h * e)
+            out = torch.bmm(attn, V).view(b*n, h, t, e)
+            out = out.transpose(1, 2).contiguous().view(b*n, t, h * e)
             out = out.sum(1)   # sum over attention scores
+            out = out.view(b, n, h * e)
             out = self.unifyheads(out)
             out = self.active_func(out)
             out = self.dropout(out)
