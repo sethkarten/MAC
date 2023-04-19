@@ -57,7 +57,7 @@ class ShareVecEnv(ABC):
         pass
 
     @abstractmethod
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         """
         Tell all the environments to start taking a step
         with the given actions.
@@ -97,13 +97,13 @@ class ShareVecEnv(ABC):
         self.close_extras()
         self.closed = True
 
-    def step(self, actions):
+    def step(self, actions, reconstructions):
         """
         Step the environments synchronously.
 
         This is available for backwards compatibility.
         """
-        self.step_async(actions)
+        self.step_async(actions, reconstructions)
         return self.step_wait()
 
     def render(self, mode='human'):
@@ -143,7 +143,7 @@ def worker(remote, parent_remote, env_fn_wrapper):
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
-            ob, reward, done, info = env.step(data)
+            ob, reward, done, info = env.step(*data)
             if 'bool' in done.__class__.__name__:
                 if done:
                     ob = env.reset()
@@ -254,9 +254,9 @@ class SubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
-        for remote, action in zip(self.remotes, actions):
-            remote.send(('step', action))
+    def step_async(self, actions, reconstructions):
+        for remote, action, reconstruction in zip(self.remotes, actions, reconstructions):
+            remote.send(('step', (action, reconstruction)))
         self.waiting = True
 
     def step_wait(self):
@@ -678,12 +678,14 @@ class DummyVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(
             env_fns), env.observation_space, env.share_observation_space, env.action_space)
         self.actions = None
+        self.reconstructions = None
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstructions):
         self.actions = actions
+        self.reconstructions = reconstructions
 
     def step_wait(self):
-        results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
+        results = [env.step(a, r) for (a, r, env) in zip(self.actions, self.reconstructions, self.envs)]
         obs, rews, dones, infos = map(np.array, zip(*results))
 
         for (i, done) in enumerate(dones):

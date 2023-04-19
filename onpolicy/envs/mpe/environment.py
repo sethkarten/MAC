@@ -117,7 +117,7 @@ class MultiAgentEnv(gym.Env):
             np.random.seed(seed)
 
     # step  this is  env.step()
-    def step(self, action_n):
+    def step(self, action_n, reconstruction):
         self.current_step += 1
         obs_n = []
         reward_n = []
@@ -131,6 +131,8 @@ class MultiAgentEnv(gym.Env):
             #     self._set_action(action_n[i][:-world.env_size*world.env_size], agent, self.action_space[i])
             # else:
             self._set_action(action_n[i], agent, self.action_space[i])
+            agent.state.A = reconstruction[i].reshape(self.world.env_size,self.world.env_size)
+            agent.state.A[agent.X_train[:,0], agent.X_train[:,1]] = agent.y_train
         # advance world state
         self.world.step()  # core.step()
         # record observation for each agent
@@ -185,6 +187,8 @@ class MultiAgentEnv(gym.Env):
     # unused right now -- agents are allowed to go beyond the viewing screen
     def _get_done(self, agent):
         if self.done_callback is None:
+            # print(self.current_step)
+            # print(self.world_length)
             if self.current_step >= self.world_length:
                 return True
             else:

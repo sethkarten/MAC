@@ -28,7 +28,7 @@ class MPERunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env, reconstructions = self.collect(step)
                     
                 # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                obs, rewards, dones, infos = self.envs.step(actions_env, reconstructions)
 
                 data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, reconstructions
 
