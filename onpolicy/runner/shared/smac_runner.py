@@ -30,8 +30,7 @@ class SMACRunner(Runner):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic = self.collect(step)
 
-                print(actions.shape)
-                # Obser reward and next obs
+                # Observe reward and next obs
                 obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(actions)
 
                 data = obs, share_obs, rewards, dones, infos, available_actions, \
