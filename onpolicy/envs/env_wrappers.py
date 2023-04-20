@@ -199,7 +199,7 @@ class GuardSubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
 
         for remote, action in zip(self.remotes, actions):
             remote.send(('step', action))
@@ -371,7 +371,7 @@ class ShareSubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         for remote, action in zip(self.remotes, actions):
             remote.send(('step', action))
         self.waiting = True
@@ -468,7 +468,7 @@ class ChooseSimpleSubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         for remote, action in zip(self.remotes, actions):
             remote.send(('step', action))
         self.waiting = True
@@ -559,7 +559,7 @@ class ChooseSubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         for remote, action in zip(self.remotes, actions):
             remote.send(('step', action))
         self.waiting = True
@@ -642,7 +642,7 @@ class ChooseGuardSubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         for remote, action in zip(self.remotes, actions):
             remote.send(('step', action))
         self.waiting = True
@@ -736,7 +736,7 @@ class ShareDummyVecEnv(ShareVecEnv):
             env_fns), env.observation_space, env.share_observation_space, env.action_space)
         self.actions = None
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         self.actions = actions
 
     def step_wait(self):
@@ -782,7 +782,7 @@ class ChooseDummyVecEnv(ShareVecEnv):
             env_fns), env.observation_space, env.share_observation_space, env.action_space)
         self.actions = None
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         self.actions = actions
 
     def step_wait(self):
@@ -819,7 +819,7 @@ class ChooseSimpleDummyVecEnv(ShareVecEnv):
             env_fns), env.observation_space, env.share_observation_space, env.action_space)
         self.actions = None
 
-    def step_async(self, actions):
+    def step_async(self, actions, reconstruction=None):
         self.actions = actions
 
     def step_wait(self):
