@@ -131,8 +131,9 @@ class MultiAgentEnv(gym.Env):
             #     self._set_action(action_n[i][:-world.env_size*world.env_size], agent, self.action_space[i])
             # else:
             self._set_action(action_n[i], agent, self.action_space[i])
-            agent.state.A = reconstruction[i].reshape(self.world.env_size,self.world.env_size)
-            agent.state.A[agent.X_train[:,0], agent.X_train[:,1]] = agent.y_train
+            if hasattr(self.world, 'use_GP') and self.world.use_GP == False:
+                agent.state.A = reconstruction[i].reshape(self.world.env_size,self.world.env_size)
+                agent.state.A[agent.X_train[:,0], agent.X_train[:,1]] = agent.y_train
         # advance world state
         self.world.step()  # core.step()
         # record observation for each agent
