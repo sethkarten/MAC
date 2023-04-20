@@ -10,7 +10,7 @@ for seed in `seq ${seed_max}`;
 do
     echo "seed is ${seed}:"
     python train/train_smac.py --env_name ${env} --algorithm_name ${algo} --experiment_name ${exp} \
-    --map_name ${map} --seed ${seed} --n_training_threads 32 --n_rollout_threads 16 \
+    --map_name ${map} --seed ${seed} --n_training_threads 1 --n_rollout_threads 1 \
     --num_mini_batch 1 --episode_length 120 --num_env_steps 20000000 --ppo_epoch 5 \
     --use_value_active_masks --comm_dim 16 
 done

@@ -79,6 +79,9 @@ class Runner(object):
         elif self.all_args.algorithm_name == 'macppo':
             from onpolicy.algorithms.macppo.r_mappo_comm import R_MAPPO_COMM as TrainAlgo
             from onpolicy.algorithms.macppo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
+        elif self.all_args.algorithm_name == 'memo_ppo':
+            from onpolicy.algorithms.memo_ppo.r_mappo_comm import R_MAPPO_COMM as TrainAlgo
+            from onpolicy.algorithms.memo_ppo.algorithm.rMAPPOPolicy import R_MAPPOPolicy as Policy
 
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V else self.envs.observation_space[0]
         # print(share_observation_space)
