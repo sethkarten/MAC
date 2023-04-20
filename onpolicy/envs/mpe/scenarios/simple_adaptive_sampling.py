@@ -166,6 +166,11 @@ class Scenario(BaseScenario):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         # Agents rewarded on how accurate agent reconstruction of world model is
         rew = -np.sum((agent.state.A - world.A)**2)
+        # print(agent.state.A)
+        # print(rew)
+        if self.outside_boundary(agent):
+            # print('boundary')
+            rew = rew - 10
         # for l in world.landmarks:
         #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
         #     rew -= min(dists)
@@ -181,9 +186,11 @@ class Scenario(BaseScenario):
         # loc = loc.round().astype(int)
         loc = np.trunc(loc).astype(int)
         # loc = tuple(loc.round())
-        if self.use_GP:
+        # if self.use_GP:
+        if self.outside_boundary == False:
             agent.X_train = np.vstack((agent.X_train, loc))
-            agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
+        agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
+        if self.use_GP:
             GPs = []
             for i, a in enumerate(world.agents):
                 a.gp.fit(a.X_train, a.y_train)
@@ -199,6 +206,11 @@ class Scenario(BaseScenario):
             agent.state.A = μ_test_2D
 
         loc = tuple(loc)
+        sampled_loc = None
+        if self.outside_boundary(agent):
+            sampled_loc = -1
+        else:
+            sampled_loc = world.A[loc]
         # communication of all other agents
         comm = []
         other_pos = []
@@ -207,5 +219,11 @@ class Scenario(BaseScenario):
                 continue
             comm.append(other.state.c)
             other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [[world.A[loc]]] + other_pos + comm)
-        return [world.A[loc]]
+        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train] + other_pos + comm)
+        # return [world.A[loc]]
+    
+    def outside_boundary(self, agent):
+        if agent.state.p_pos[0] > 1 or agent.state.p_pos[0] < -1 or agent.state.p_pos[1] > 1 or agent.state.p_pos[1] < -1:
+            return True
+        else:
+            return False
