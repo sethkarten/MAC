@@ -97,7 +97,7 @@ class ShareVecEnv(ABC):
         self.close_extras()
         self.closed = True
 
-    def step(self, actions, reconstructions):
+    def step(self, actions, reconstructions=None):
         """
         Step the environments synchronously.
 
@@ -143,7 +143,10 @@ def worker(remote, parent_remote, env_fn_wrapper):
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
-            ob, reward, done, info = env.step(*data)
+            if type(data) == tuple and len(data) == 2:
+                ob, reward, done, info = env.step(*data)
+            else:
+                ob, reward, done, info = env.step(data)
             if 'bool' in done.__class__.__name__:
                 if done:
                     ob = env.reset()
@@ -254,9 +257,13 @@ class SubprocVecEnv(ShareVecEnv):
         ShareVecEnv.__init__(self, len(env_fns), observation_space,
                              share_observation_space, action_space)
 
-    def step_async(self, actions, reconstructions):
-        for remote, action, reconstruction in zip(self.remotes, actions, reconstructions):
-            remote.send(('step', (action, reconstruction)))
+    def step_async(self, actions, reconstructions=None):
+        if reconstructions is None:
+            for remote, action in zip(self.remotes, actions):
+                remote.send(('step', action))
+        else:
+            for remote, action, reconstruction in zip(self.remotes, actions, reconstructions):
+                remote.send(('step', (action, reconstruction)))
         self.waiting = True
 
     def step_wait(self):
@@ -680,12 +687,15 @@ class DummyVecEnv(ShareVecEnv):
         self.actions = None
         self.reconstructions = None
 
-    def step_async(self, actions, reconstructions):
+    def step_async(self, actions, reconstructions=None):
         self.actions = actions
         self.reconstructions = reconstructions
 
     def step_wait(self):
-        results = [env.step(a, r) for (a, r, env) in zip(self.actions, self.reconstructions, self.envs)]
+        if self.reconstructions is None:
+            results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
+        else:
+            results = [env.step(a, r) for (a, r, env) in zip(self.actions, self.reconstructions, self.envs)]
         obs, rews, dones, infos = map(np.array, zip(*results))
 
         for (i, done) in enumerate(dones):

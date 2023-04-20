@@ -37,6 +37,7 @@ class R_MAPPOPolicy:
                                                  lr=self.critic_lr,
                                                  eps=self.opti_eps,
                                                  weight_decay=self.weight_decay)
+        self.args = args
 
     def lr_decay(self, episode, episodes):
         """
@@ -66,14 +67,24 @@ class R_MAPPOPolicy:
         :return rnn_states_actor: (torch.Tensor) updated actor network RNN states.
         :return rnn_states_critic: (torch.Tensor) updated critic network RNN states.
         """
-        actions, action_log_probs, rnn_states_actor, reconstruction = self.actor(obs,
-                                                                 rnn_states_actor,
-                                                                 masks,
-                                                                 available_actions,
-                                                                 deterministic)
+        if self.args.env_name == 'MPE':
+            actions, action_log_probs, rnn_states_actor, reconstruction = self.actor(obs,
+                                                                    rnn_states_actor,
+                                                                    masks,
+                                                                    available_actions,
+                                                                    deterministic)
+        else:
+            actions, action_log_probs, rnn_states_actor = self.actor(obs,
+                                                                    rnn_states_actor,
+                                                                    masks,
+                                                                    available_actions,
+                                                                    deterministic)
 
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, reconstruction
+        if self.args.env_name == 'MPE':
+            return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, reconstruction
+        else:
+            return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
         """
