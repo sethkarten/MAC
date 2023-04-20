@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from onpolicy.algorithms.utils.util import init, check
 from onpolicy.algorithms.utils.cnn import CNNBase
-from onpolicy.algorithms.utils.mlp import MLPBase
+from onpolicy.algorithms.utils.mlp import MLPBase, MLPLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
@@ -58,7 +58,7 @@ class MAC_R_Actor(nn.Module):
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
-        self.reconstruct = nn.Linear(self.hidden_size, 16*16)
+        self.reconstruct = MLPLayer(obs_shape[0], 16*16, 3, True, True)
 
         # autoencoder
         if self.args.use_ae:
@@ -104,7 +104,7 @@ class MAC_R_Actor(nn.Module):
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
 
         # reconstruction of env
-        reconstruction = self.reconstruct(actor_features)
+        reconstruction = self.reconstruct(obs)
 
         return actions, action_log_probs, rnn_states, reconstruction
 
