@@ -58,7 +58,8 @@ class MAC_R_Actor(nn.Module):
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
-        self.reconstruct = MLPLayer(obs_shape[0], 16*16, 3, True, True)
+        if self.args.env_name == 'MPE':
+            self.reconstruct = MLPLayer(obs_shape[0], 16*16, 3, True, True)
 
         # autoencoder
         if self.args.use_ae:
@@ -103,10 +104,12 @@ class MAC_R_Actor(nn.Module):
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
 
-        # reconstruction of env
-        reconstruction = self.reconstruct(obs)
-
-        return actions, action_log_probs, rnn_states, reconstruction
+        if self.args.env_name == 'MPE':
+            # reconstruction of env
+            reconstruction = self.reconstruct(obs)
+            return actions, action_log_probs, rnn_states, reconstruction
+        else:
+            return actions, action_log_probs, rnn_states
 
     def evaluate_actions(self, obs, rnn_states, action, masks, available_actions=None, active_masks=None):
         """
