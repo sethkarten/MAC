@@ -369,7 +369,7 @@ class MAC(nn.Module):
 
 if __name__ == '__main__':
 
-    comm = torch.tensor([[1,1],[2,2],[3,3]])
+    comm = torch.tensor([[[1,1],[2,2],[3,3]], [[1,1],[2,2],[3,3]]])
     n = 3
     comm_dim = 2
     comm = comm.reshape(-1, n, comm_dim)
@@ -399,5 +399,5 @@ if __name__ == '__main__':
     # print(comm.shape)
     comm = comm.sum(dim=1)
     # print(comm.shape)
-    print( comm.reshape(-1, comm_dim) )
+    print( comm.reshape(-1, n, comm_dim) )
     

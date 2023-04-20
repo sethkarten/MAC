@@ -103,16 +103,6 @@ class PascalVocEnv(gym.Env):
             9: [14, 17]
         }
 
-    # def init_curses(self):
-    #     self.stdscr = curses.initscr()
-    #     curses.start_color()
-    #     curses.use_default_colors()
-    #     curses.init_pair(1, curses.COLOR_RED, -1)
-    #     curses.init_pair(2, curses.COLOR_YELLOW, -1)
-    #     curses.init_pair(3, curses.COLOR_CYAN, -1)
-    #     curses.init_pair(4, curses.COLOR_GREEN, -1)
-    #     curses.init_pair(5, curses.COLOR_BLUE, -1)
-
     def multi_agent_init(self, args):
         #print("init tj")
         # General variables defining the environment : CONFIG
@@ -360,90 +350,12 @@ class PascalVocEnv(gym.Env):
 
         return local_obs, global_state, reward, dones, infos, available_actions
 
-    # def render(self, mode='human', close=False):
-
-    #     grid = self.grid.copy().astype(object)
-    #     # grid = np.zeros(self.dims[0]*self.dims[1], dtypeobject).reshape(self.dims)
-    #     grid[grid != self.OUTSIDE_CLASS] = '_'
-    #     grid[grid == self.OUTSIDE_CLASS] = ''
-    #     # self.stdscr.clear()
-    #     for i, p in enumerate(self.car_loc):
-    #         # print("car locs", p)
-    #         if self.car_last_act[i] == 0: # GAS
-    #             if grid[p[0]][p[1]] != 0:
-    #                 grid[p[0]][p[1]] = str(grid[p[0]][p[1]]).replace('_','') + '<>'
-    #             else:
-    #                 grid[p[0]][p[1]] = '<>'
-    #         else: # BRAKE
-    #             if grid[p[0]][p[1]] != 0:
-    #                 grid[p[0]][p[1]] = str(grid[p[0]][p[1]]).replace('_','') + '<b>'
-    #             else:
-    #                 grid[p[0]][p[1]] = '<b>'
-    #     # from pprint import pprint
-    #     # pprint(grid)
-
-    #     for row_num, row in enumerate(grid):
-    #         for idx, item in enumerate(row):
-    #             if row_num == idx == 0:
-    #                 continue
-    #             # print("rows", row_num, idx*4)
-    #             continue
-    #             if item != '_':
-    #                 if '<>' in item and len(item) > 3: #CRASH, one car accelerates
-    #                     self.stdscr.addstr(row_num, idx * 4, item.replace('b','').center(3), curses.color_pair(2))
-    #                 elif '<>' in item: #GAS
-    #                     self.stdscr.addstr(row_num, idx * 4, item.center(3), curses.color_pair(1))
-    #                 elif 'b' in item and len(item) > 3: #CRASH
-    #                     self.stdscr.addstr(row_num, idx * 4, item.replace('b','').center(3), curses.color_pair(2))
-    #                 elif 'b' in item:
-    #                     self.stdscr.addstr(row_num, idx * 4, item.replace('b','').center(3), curses.color_pair(5))
-    #                 else:
-    #                     self.stdscr.addstr(row_num, idx * 4, item.center(3),  curses.color_pair(2))
-    #             else:
-    #                 self.stdscr.addstr(row_num, idx * 4, '_'.center(3), curses.color_pair(4))
-    #     # self.stdscr.addstr(len(grid), 0, '\n')
-    #     # self.stdscr.refresh()
-
-    # def exit_render(self):
-    #     curses.endwin()
-
     def seed(self, seed):
         """Returns the random seed used by the environment."""
         self._seed = seed
 
-    # def _set_grid(self):
-    #     self.grid = np.full(self.dims[0] * self.dims[1], self.OUTSIDE_CLASS, dtype=int).reshape(self.dims)
-    #     w, h = self.dims
-
-    #     # Mark the roads
-    #     roads = get_road_blocks(w,h, self.difficulty)
-    #     for road in roads:
-    #         self.grid[road] = self.ROAD_CLASS
-    #     if self.vocab_type == 'bool':
-    #         self.route_grid = self.grid.copy()
-    #         start = 0
-    #         for road in roads:
-    #             sz = int(np.prod(self.grid[road].shape))
-    #             self.grid[road] = np.arange(start, start + sz).reshape(self.grid[road].shape)
-    #             start += sz
-
-    #     # Padding for vision
-    #     self.pad_grid = np.pad(self.grid, self.vision, 'constant', constant_values = self.OUTSIDE_CLASS)
-
-    #     self.empty_bool_base_grid = self._onehot_initialization(self.pad_grid)
-
     def _get_obs(self):
         h, w = self.dims
-        # self.bool_base_grid = self.empty_bool_base_grid.copy()
-
-        # Mark cars' location in Bool grid
-        # for i, p in enumerate(self.car_loc):
-        #     self.bool_base_grid[p[0] + self.vision, p[1] + self.vision, self.CAR_CLASS] += 1
-
-
-        # # remove the outside class.
-        # if self.vocab_type == 'scalar':
-        #     self.bool_base_grid = self.bool_base_grid[:,:,1:]
 
 
         obs = []
@@ -459,24 +371,6 @@ class PascalVocEnv(gym.Env):
             if self.resize == True:
                 train_image = data.transforms.image.imresize(src=train_image, w=32, h=32)
             train_image = train_image.asnumpy()
-
-            # route id
-            # r_i = self.route_id[i] / (self.npath - 1)
-
-            # loc
-            # p_norm = p / (h-1, w-1)
-
-            # vision square
-            # slice_y = slice(p[0], p[0] + (2 * self.vision) + 1)
-            # slice_x = slice(p[1], p[1] + (2 * self.vision) + 1)
-            # v_sq = self.bool_base_grid[slice_y, slice_x]
-
-            # when dead, all obs are 0. But should be masked by trainer.
-            # if self.alive_mask[i] == 0:
-            #     act = np.zeros_like(act)
-            #     r_i = np.zeros_like(r_i)
-            #     p_norm = np.zeros_like(p_norm)
-            #     v_sq = np.zeros_like(v_sq)
 
             if self.vocab_type == 'bool':
                 o = tuple((#act,
@@ -494,175 +388,6 @@ class PascalVocEnv(gym.Env):
         n, s = local_obs.shape
         return np.tile(local_obs, [self.ncar, 1]).reshape(n, n * s)
 
-    # def _add_cars(self):
-    #     for r_i, routes in enumerate(self.routes):
-    #         if self.cars_in_sys >= self.ncar:
-    #             return
-
-    #         # Add car to system and set on path
-    #         if np.random.uniform() <= self.add_rate:
-
-    #             # chose dead car on random
-    #             idx = self._choose_dead()
-    #             # make it alive
-    #             self.alive_mask[idx] = 1
-
-    #             # choose path randomly & set it
-    #             p_i = np.random.choice(len(routes))
-    #             # make sure all self.routes have equal len/ same no. of routes
-    #             self.route_id[idx] = p_i + r_i * len(routes)
-    #             self.chosen_path[idx] = routes[p_i]
-
-    #             # set its start loc
-    #             self.car_route_loc[idx] = 0
-    #             self.car_loc[idx] = routes[p_i][0]
-
-    #             # increase count
-    #             self.cars_in_sys += 1
-
-    # def _set_paths_easy(self):
-    #     h, w = self.dims
-    #     self.routes = {
-    #         'TOP': [],
-    #         'LEFT': []
-    #     }
-
-    #     # 0 refers to UP to DOWN, type 0
-    #     full = [(i, w//2) for i in range(h)]
-    #     self.routes['TOP'].append(np.array([*full]))
-
-    #     # 1 refers to LEFT to RIGHT, type 0
-    #     full = [(h//2, i) for i in range(w)]
-    #     self.routes['LEFT'].append(np.array([*full]))
-
-    #     self.routes = list(self.routes.values())
-
-
-    # def _set_paths_medium_old(self):
-    #     h,w = self.dims
-    #     self.routes = {
-    #         'TOP': [],
-    #         'LEFT': [],
-    #         'RIGHT': [],
-    #         'DOWN': []
-    #     }
-
-    #     # type 0 paths: go straight on junction
-    #     # type 1 paths: take right on junction
-    #     # type 2 paths: take left on junction
-
-
-    #     # 0 refers to UP to DOWN, type 0
-    #     full = [(i, w//2-1) for i in range(h)]
-    #     self.routes['TOP'].append(np.array([*full]))
-
-    #     # 1 refers to UP to LEFT, type 1
-    #     first_half = full[:h//2]
-    #     second_half = [(h//2 - 1, i) for i in range(w//2 - 2,-1,-1) ]
-    #     self.routes['TOP'].append(np.array([*first_half, *second_half]))
-
-    #     # 2 refers to UP to RIGHT, type 2
-    #     second_half = [(h//2, i) for i in range(w//2-1, w) ]
-    #     self.routes['TOP'].append(np.array([*first_half, *second_half]))
-
-
-    #     # 3 refers to LEFT to RIGHT, type 0
-    #     full = [(h//2, i) for i in range(w)]
-    #     self.routes['LEFT'].append(np.array([*full]))
-
-    #     # 4 refers to LEFT to DOWN, type 1
-    #     first_half = full[:w//2]
-    #     second_half = [(i, w//2 - 1) for i in range(h//2+1, h)]
-    #     self.routes['LEFT'].append(np.array([*first_half, *second_half]))
-
-    #     # 5 refers to LEFT to UP, type 2
-    #     second_half = [(i, w//2) for i in range(h//2, -1,-1) ]
-    #     self.routes['LEFT'].append(np.array([*first_half, *second_half]))
-
-
-    #     # 6 refers to DOWN to UP, type 0
-    #     full = [(i, w//2) for i in range(h-1,-1,-1)]
-    #     self.routes['DOWN'].append(np.array([*full]))
-
-    #     # 7 refers to DOWN to RIGHT, type 1
-    #     first_half = full[:h//2]
-    #     second_half = [(h//2, i) for i in range(w//2+1,w)]
-    #     self.routes['DOWN'].append(np.array([*first_half, *second_half]))
-
-    #     # 8 refers to DOWN to LEFT, type 2
-    #     second_half = [(h//2-1, i) for i in range(w//2,-1,-1)]
-    #     self.routes['DOWN'].append(np.array([*first_half, *second_half]))
-
-
-    #     # 9 refers to RIGHT to LEFT, type 0
-    #     full = [(h//2-1, i) for i in range(w-1,-1,-1)]
-    #     self.routes['RIGHT'].append(np.array([*full]))
-
-    #     # 10 refers to RIGHT to UP, type 1
-    #     first_half = full[:w//2]
-    #     second_half = [(i, w//2) for i in range(h//2 -2, -1,-1)]
-    #     self.routes['RIGHT'].append(np.array([*first_half, *second_half]))
-
-    #     # 11 refers to RIGHT to DOWN, type 2
-    #     second_half = [(i, w//2-1) for i in range(h//2-1, h)]
-    #     self.routes['RIGHT'].append(np.array([*first_half, *second_half]))
-
-
-    #     # PATHS_i: 0 to 11
-    #     # 0 refers to UP to down,
-    #     # 1 refers to UP to left,
-    #     # 2 refers to UP to right,
-    #     # 3 refers to LEFT to right,
-    #     # 4 refers to LEFT to down,
-    #     # 5 refers to LEFT to up,
-    #     # 6 refers to DOWN to up,
-    #     # 7 refers to DOWN to right,
-    #     # 8 refers to DOWN to left,
-    #     # 9 refers to RIGHT to left,
-    #     # 10 refers to RIGHT to up,
-    #     # 11 refers to RIGHT to down,
-
-    #     # Convert to routes dict to list of paths
-    #     paths = []
-    #     for r in self.routes.values():
-    #         for p in r:
-    #             paths.append(p)
-
-    #     # Check number of paths
-    #     # assert len(paths) == self.npath
-
-    #     # Test all paths
-    #     assert self._unittest_path(paths)
-
-    # def _set_paths(self, difficulty):
-    #     route_grid = self.route_grid if self.vocab_type == 'bool' else self.grid
-    #     self.routes = get_routes(self.dims, route_grid, difficulty)
-
-    #     # Convert/unroll routes which is a list of list of paths
-    #     paths = []
-    #     for r in self.routes:
-    #         for p in r:
-    #             paths.append(p)
-
-    #     # Check number of paths
-    #     assert len(paths) == self.npath
-
-    #     # Test all paths
-    #     assert self._unittest_path(paths)
-
-
-    # def _unittest_path(self,paths):
-    #     for i, p in enumerate(paths[:-1]):
-    #         next_dif = p - np.row_stack([p[1:], p[-1]])
-    #         next_dif = np.abs(next_dif[:-1])
-    #         step_jump = np.sum(next_dif, axis =1)
-    #         if np.any(step_jump != 1):
-    #             print("Any", p, i)
-    #             return False
-    #         if not np.all(step_jump == 1):
-    #             print("All", p, i)
-    #             return False
-    #     return True
 
 
     def _take_action(self, idx, act):
@@ -728,13 +453,6 @@ class PascalVocEnv(gym.Env):
             reward[0] = 1
             reward[1] = 1
 
-        # for i, l in enumerate(self.car_loc):
-        #     if (len(np.where(np.all(self.car_loc[:i] == l,axis=1))[0]) or \
-        #        len(np.where(np.all(self.car_loc[i+1:] == l,axis=1))[0])) and l.any():
-        #        reward[i] += self.CRASH_PENALTY
-        #        self.has_failed = 1
-
-        # reward = self.alive_mask * reward
         return reward
 
     def _onehot_initialization(self, a):
@@ -754,11 +472,6 @@ class PascalVocEnv(gym.Env):
     def reward_terminal(self):
         return np.zeros_like(self._get_reward())
 
-    # def _choose_dead(self):
-    #     # all idx
-    #     car_idx = np.arange(len(self.alive_mask))
-    #     # random choice of idx from dead ones.
-    #     return np.random.choice(car_idx[self.alive_mask == 0])
 
 
     def curriculum(self, epoch):

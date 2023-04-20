@@ -8,10 +8,10 @@ from onpolicy.runner.shared.base_runner import Runner
 def _t2n(x):
     return x.detach().cpu().numpy()
 
-class SMACRunner(Runner):
+class MNISTRunner(Runner):
     """Runner class to perform training, evaluation. and data collection for SMAC. See parent class for details."""
     def __init__(self, config):
-        super(SMACRunner, self).__init__(config)
+        super(MNISTRunner, self).__init__(config)
 
     def run(self):
         self.warmup()
@@ -19,8 +19,6 @@ class SMACRunner(Runner):
         start = time.time()
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
-        last_battles_game = np.zeros(self.n_rollout_threads, dtype=np.float32)
-        last_battles_won = np.zeros(self.n_rollout_threads, dtype=np.float32)
 
         for episode in range(episodes):
             if self.use_linear_lr_decay:
@@ -30,7 +28,6 @@ class SMACRunner(Runner):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic = self.collect(step)
 
-                print(actions.shape)
                 # Obser reward and next obs
                 obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(actions)
 
@@ -54,41 +51,16 @@ class SMACRunner(Runner):
             # log information
             if episode % self.log_interval == 0:
                 end = time.time()
-                print("\n Map {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
-                        .format(self.all_args.map_name,
-                                self.algorithm_name,
+                train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+                print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                print("\n Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
+                        .format(self.algorithm_name,
                                 self.experiment_name,
                                 episode,
                                 episodes,
                                 total_num_steps,
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
-
-                if self.env_name == "StarCraft2":
-                    battles_won = []
-                    battles_game = []
-                    incre_battles_won = []
-                    incre_battles_game = []
-
-                    for i, info in enumerate(infos):
-                        if 'battles_won' in info[0].keys():
-                            battles_won.append(info[0]['battles_won'])
-                            incre_battles_won.append(info[0]['battles_won']-last_battles_won[i])
-                        if 'battles_game' in info[0].keys():
-                            battles_game.append(info[0]['battles_game'])
-                            incre_battles_game.append(info[0]['battles_game']-last_battles_game[i])
-
-                    incre_win_rate = np.sum(incre_battles_won)/np.sum(incre_battles_game) if np.sum(incre_battles_game)>0 else 0.0
-                    print("incre win rate is {}.".format(incre_win_rate))
-                    if self.use_wandb:
-                        wandb.log({"incre_win_rate": incre_win_rate}, step=total_num_steps)
-                    else:
-                        self.writter.add_scalars("incre_win_rate", {"incre_win_rate": incre_win_rate}, total_num_steps)
-
-                    last_battles_game = battles_game
-                    last_battles_won = battles_won
-
-                train_infos['dead_ratio'] = 1 - self.buffer.active_masks.sum() / reduce(lambda x, y: x*y, list(self.buffer.active_masks.shape))
 
                 self.log_train(train_infos, total_num_steps)
 
@@ -99,13 +71,15 @@ class SMACRunner(Runner):
     def warmup(self):
         # reset env
         obs, share_obs, available_actions = self.envs.reset()
-
         # replay buffer
         if not self.use_centralized_V:
             share_obs = obs
-
-        self.buffer.share_obs[0] = share_obs.copy()
+        # if self.all_args.n_rollout_threads > 1:
+        #     obs = obs.reshape(self.buffer.obs[0].shape)
+        #     share_obs = share_obs.reshape(self.buffer.share_obs[0].shape)
+        #     available_actions = available_actions.reshape(self.buffer.available_actions[0].shape)
         self.buffer.obs[0] = obs.copy()
+        self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.available_actions[0] = available_actions.copy()
 
     @torch.no_grad()
@@ -164,7 +138,7 @@ class SMACRunner(Runner):
         active_masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
         active_masks[dones_env == True] = np.ones(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
 
-        bad_masks = np.array([[[0.0] if info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in infos])
+        bad_masks = np.array([[[1.0] for agent_id in range(self.num_agents)] for info in infos])
 
         if not self.use_centralized_V:
             share_obs = obs

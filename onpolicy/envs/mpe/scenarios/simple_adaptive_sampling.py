@@ -140,7 +140,7 @@ class Scenario(BaseScenario):
         #     landmark.movable = False
         # make initial conditions
         self.reset_world(world)
-        self.use_GP = True
+        self.use_GP = False
         # print('init world')
         return world
     
