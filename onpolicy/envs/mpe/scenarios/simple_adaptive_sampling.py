@@ -21,6 +21,8 @@ warnings.filterwarnings(action='ignore')
 
 ENV_SIZE = 16
 
+USE_GP = False
+
 class AdaptiveSamplingAgentState(AgentState):
     def __init__(self):
         super(AdaptiveSamplingAgentState, self).__init__()
@@ -53,6 +55,8 @@ class AdaptiveSamplingWorld(World):
         A3[row[0]-(N//2):row[0]+(N//2)+1, col[0]-(N//2):col[0]+(N//2)+1] = kernel
 
         self.A = A1 + A2 + A3
+
+        self.use_GP = USE_GP
 
 class AdaptiveSamplingAgent(Agent):
     def __init__(self, world):
@@ -140,7 +144,8 @@ class Scenario(BaseScenario):
         #     landmark.movable = False
         # make initial conditions
         self.reset_world(world)
-        self.use_GP = False
+        self.use_GP = USE_GP
+        self.use_sampling_reward = True
         # print('init world')
         return world
     
@@ -165,12 +170,21 @@ class Scenario(BaseScenario):
     def reward(self, agent, world):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         # Agents rewarded on how accurate agent reconstruction of world model is
-        rew = -np.sum((agent.state.A - world.A)**2)
-        # print(agent.state.A)
-        # print(rew)
+        rew = 0
         if self.outside_boundary(agent):
             # print('boundary')
             rew = rew - 10
+            return rew
+        if self.use_sampling_reward:
+            loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
+            # loc = loc.round().astype(int)
+            loc = np.trunc(loc).astype(int)
+            loc = tuple(loc)
+            rew = world.A[loc]
+        else:
+            rew = -np.sum((agent.state.A - world.A)**2)
+        # print(agent.state.A)
+        # print(rew)
         # for l in world.landmarks:
         #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
         #     rew -= min(dists)
@@ -219,7 +233,7 @@ class Scenario(BaseScenario):
                 continue
             comm.append(other.state.c)
             other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + [[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train] + other_pos + comm)
+        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train] + comm)
         # return [world.A[loc]]
     
     def outside_boundary(self, agent):
