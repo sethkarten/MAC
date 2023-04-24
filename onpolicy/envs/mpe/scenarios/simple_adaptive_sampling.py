@@ -23,6 +23,8 @@ ENV_SIZE = 16
 
 USE_GP = False
 
+USE_SAMPLING_REWARD = True
+
 class AdaptiveSamplingAgentState(AgentState):
     def __init__(self):
         super(AdaptiveSamplingAgentState, self).__init__()
@@ -145,7 +147,7 @@ class Scenario(BaseScenario):
         # make initial conditions
         self.reset_world(world)
         self.use_GP = USE_GP
-        self.use_sampling_reward = True
+        self.use_sampling_reward = USE_SAMPLING_REWARD
         # print('init world')
         return world
     
@@ -171,18 +173,21 @@ class Scenario(BaseScenario):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         # Agents rewarded on how accurate agent reconstruction of world model is
         rew = 0
-        if self.outside_boundary(agent):
-            # print('boundary')
-            rew = rew - 10
-            return rew
         if self.use_sampling_reward:
+            if self.outside_boundary(agent):
+                # print('boundary')
+                rew = self.boundary_penalty(agent, rew) #rew - 10
+                return rew
             loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
-            # loc = loc.round().astype(int)
-            loc = np.trunc(loc).astype(int)
+            loc = loc.round().astype(int)
+            # loc = np.trunc(loc).astype(int)
             loc = tuple(loc)
             rew = world.A[loc]
         else:
-            rew = -np.sum((agent.state.A - world.A)**2)
+            if self.outside_boundary(agent):
+                # print('boundary')
+                rew = self.boundary_penalty(agent, rew)
+            rew = rew - np.sum((agent.state.A - world.A)**2)
         # print(agent.state.A)
         # print(rew)
         # for l in world.landmarks:
@@ -193,12 +198,16 @@ class Scenario(BaseScenario):
         #         if self.is_collision(a, agent):
         #             rew -= 1
         # print(rew)
+        if agent.collide:
+            for a in world.agents:
+                if a.name != agent.name and self.is_collision(a, agent, world):
+                    rew -= 1
         return rew
     
     def observation(self, agent, world):
         loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
-        # loc = loc.round().astype(int)
-        loc = np.trunc(loc).astype(int)
+        loc = loc.round().astype(int)
+        # loc = np.trunc(loc).astype(int)
         # loc = tuple(loc.round())
         # if self.use_GP:
         if self.outside_boundary == False:
@@ -241,3 +250,28 @@ class Scenario(BaseScenario):
             return True
         else:
             return False
+    
+    def boundary_penalty(self, agent, rew):
+        # rew = 0
+        if agent.state.p_pos[0] > 1:
+            rew = rew - (agent.state.p_pos[0] - 1)
+        if agent.state.p_pos[0] < -1:
+            rew = rew - (-1 - agent.state.p_pos[0])
+        if agent.state.p_pos[1] > 1:
+            rew = rew - (agent.state.p_pos[1] - 1)
+        if agent.state.p_pos[1] < -1:
+            rew = rew - (-1 - agent.state.p_pos[1])
+        return rew
+    
+    def is_collision(self, agent1, agent2, world):
+        loc1 = (agent1.state.p_pos + 1)*((world.env_size-1)/2)
+        loc1 = loc1.round().astype(int)
+        
+        loc2 = (agent2.state.p_pos + 1)*((world.env_size-1)/2)
+        loc2 = loc2.round().astype(int)
+
+        return True if np.allclose(loc1, loc2) else False
+
+        dist = np.sqrt(np.sum(np.square(delta_pos)))
+        dist_min = agent1.size + agent2.size
+        return True if dist < dist_min else False
