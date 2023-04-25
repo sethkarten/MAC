@@ -21,8 +21,6 @@ warnings.filterwarnings(action='ignore')
 
 ENV_SIZE = 16
 
-USE_GP = False
-
 USE_SAMPLING_REWARD = True
 
 class AdaptiveSamplingAgentState(AgentState):
@@ -58,7 +56,6 @@ class AdaptiveSamplingWorld(World):
 
         self.A = A1 + A2 + A3
 
-        self.use_GP = USE_GP
 
 class AdaptiveSamplingAgent(Agent):
     def __init__(self, world):
@@ -103,6 +100,7 @@ class AdaptiveSamplingAgent(Agent):
 
 class Scenario(BaseScenario):
     def make_world(self, args):
+        self.use_GP = args.use_GP
         # N = 7   # kernel size
         # k1d = signal.gaussian(N, std=1).reshape(N, 1)
         # kernel = np.outer(k1d, k1d)
@@ -146,7 +144,6 @@ class Scenario(BaseScenario):
         #     landmark.movable = False
         # make initial conditions
         self.reset_world(world)
-        self.use_GP = USE_GP
         self.use_sampling_reward = USE_SAMPLING_REWARD
         # print('init world')
         return world

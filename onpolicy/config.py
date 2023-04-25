@@ -229,6 +229,8 @@ def get_config():
     parser.add_argument("--mha_comm", action='store_false',
         default=True, help='use a multi-headed attention when receiving communication')
     parser.add_argument("--comm_rounds", type=int, default=1, help="The number of communication rounds.")
+    parser.add_argument("--no_comm", action='store_true',
+        default=False, help='do not communicate')
 
     # contrastive parameters
     parser.add_argument("--contrastive", action='store_true', default=False, help='use a contrastive')
@@ -245,6 +247,10 @@ def get_config():
     parser.add_argument("--beta", type=float, default=1., help='vae KLD hyperparameter')
     parser.add_argument("--vocab_size", type=int, default=32, help='number of distinct discrete messages')
     parser.add_argument("--composition_dim", type=int, default=2, help='number of distinct discrete messages')
+    
+    # adaptive sampling flags
+    parser.add_argument("--use_GP", action='store_true', default=False, help='use GP method for adaptive sampling')
+
 
     # optimizer parameters
     parser.add_argument("--lr", type=float, default=5e-4,
