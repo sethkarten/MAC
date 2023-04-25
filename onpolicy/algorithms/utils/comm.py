@@ -161,6 +161,8 @@ class MAC(nn.Module):
         # print(comm.shape)
         comm = comm.reshape(-1, self.comm_dim)
         # print('after', comm, comm.shape)
+        if self.args.no_comm:
+            comm *= 0
         return comm #, comm_prob, comm_out_mask
 
     def do_embed(self, x):
