@@ -21,7 +21,6 @@ warnings.filterwarnings(action='ignore')
 
 ENV_SIZE = 16
 
-USE_SAMPLING_REWARD = True
 
 class AdaptiveSamplingAgentState(AgentState):
     def __init__(self):
@@ -31,31 +30,47 @@ class AdaptiveSamplingAgentState(AgentState):
         self.A = np.zeros((self.env_size, self.env_size))
         # print('init agent state')
 
+
+
 class AdaptiveSamplingWorld(World):
     def __init__(self):
         super(AdaptiveSamplingWorld, self).__init__()
         self.env_size = ENV_SIZE
+        self.reset_sampling()
+
+    def reset_sampling(self):
         N = 7   # kernel size
         k1d = signal.gaussian(N, std=1).reshape(N, 1)
         kernel = np.outer(k1d, k1d)
-
-        A1 = np.zeros((self.env_size, self.env_size))
-        A1[5, 11] = 1    # random
-        row, col = np.where(A1 == 1)
-        A1[row[0]-(N//2):row[0]+(N//2)+1, col[0]-(N//2):col[0]+(N//2)+1] = kernel
-
-        A2 = np.zeros((self.env_size, self.env_size))
-        A2[3, 3] = 1    # random
-        row, col = np.where(A2 == 1)
-        A2[row[0]-(N//2):row[0]+(N//2)+1, col[0]-(N//2):col[0]+(N//2)+1] = kernel
-
-        A3 = np.zeros((self.env_size, self.env_size))
-        A3[11, 5] = 1    # random
-        row, col = np.where(A3 == 1)
-        A3[row[0]-(N//2):row[0]+(N//2)+1, col[0]-(N//2):col[0]+(N//2)+1] = kernel
-
-        self.A = A1 + A2 + A3
-
+        self.A = np.zeros((self.env_size, self.env_size))
+        all_peaks = [1,1,1,0.5,0.5,0.5,0.5]
+        self.peaks = np.empty((len(all_peaks),2))
+        for i, peak in enumerate(all_peaks):
+            A_new = np.zeros((self.env_size, self.env_size))
+            x,y = np.random.randint(0,self.env_size), np.random.randint(0,self.env_size)
+            self.peaks[i, 0] = x
+            self.peaks[i, 1] = y
+            A_new[x, y] = peak
+            _kernel = kernel
+            x_min = x-(N//2)
+            x_max = x+(N//2)+1
+            if x_min < 0:
+                _kernel = _kernel[-x_min:]
+                x_min = 0
+            if x_max > self.env_size:
+                _kernel = _kernel[:-(x_max-self.env_size)]
+                x_max = self.env_size
+            y_min = y-(N//2)
+            y_max = y+(N//2)+1
+            if y_min < 0:
+                _kernel = _kernel[:,-y_min:]
+                y_min = 0
+            if y_max > self.env_size:
+                _kernel = _kernel[:,:-(y_max-self.env_size)]
+                y_max = self.env_size
+            A_new[x_min:x_max, y_min:y_max] = peak*_kernel
+    
+            self.A = self.A + A_new
 
 class AdaptiveSamplingAgent(Agent):
     def __init__(self, world):
@@ -144,11 +159,12 @@ class Scenario(BaseScenario):
         #     landmark.movable = False
         # make initial conditions
         self.reset_world(world)
-        self.use_sampling_reward = USE_SAMPLING_REWARD
+        self.use_sampling_reward = args.use_sampling_reward
         # print('init world')
         return world
     
     def reset_world(self, world):
+        world.reset_sampling()
         # random properties for agents
         for i, agent in enumerate(world.agents):
             agent.color = np.array([0.35, 0.35, 0.85])
@@ -166,38 +182,40 @@ class Scenario(BaseScenario):
         #     landmark.state.p_vel = np.zeros(world.dim_p)
         # print('reset world')
     
-    def reward(self, agent, world):
+    def reward(self, _agent, world):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         # Agents rewarded on how accurate agent reconstruction of world model is
         rew = 0
+        if self.outside_boundary(_agent):
+            rew += self.boundary_penalty(_agent, rew) 
+            # return rew
         if self.use_sampling_reward:
-            if self.outside_boundary(agent):
-                # print('boundary')
-                rew = self.boundary_penalty(agent, rew) #rew - 10
-                return rew
-            loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
-            loc = loc.round().astype(int)
-            # loc = np.trunc(loc).astype(int)
-            loc = tuple(loc)
-            rew = world.A[loc]
+            seen_peaks = []
+            for i, agent in enumerate(world.agents):
+                if self.outside_boundary(agent): continue
+                
+                # print(world.peaks, agent.state.p_pos)
+                agentx, agenty = (agent.state.p_pos + 1)*((world.env_size-1)/2)
+                dist_to_peaks = (world.peaks[:,0] - agentx)**2 +\
+                                (world.peaks[:,1] - agenty)**2
+                # for p in seen_peaks:
+                #     dist_to_peaks[p] = np.inf
+                closest_peak = np.argmin(dist_to_peaks)
+                # print(closest_peak)
+                # import sys
+                # sys.exit()
+                if closest_peak not in seen_peaks:
+                    loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
+                    loc = loc.round().astype(int)
+                    loc = tuple(loc)
+                    rew += world.A[loc]
+                    seen_peaks.append(closest_peak)
         else:
-            if self.outside_boundary(agent):
-                # print('boundary')
-                rew = self.boundary_penalty(agent, rew)
-            rew = rew - np.sum((agent.state.A - world.A)**2)
-        # print(agent.state.A)
-        # print(rew)
-        # for l in world.landmarks:
-        #     dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
-        #     rew -= min(dists)
-        # if agent.collide:
-        #     for a in world.agents:
-        #         if self.is_collision(a, agent):
-        #             rew -= 1
-        # print(rew)
-        if agent.collide:
+            # reconstruction reward
+            rew -= np.sum((_agent.state.A - world.A)**2)
+        if _agent.collide:
             for a in world.agents:
-                if a.name != agent.name and self.is_collision(a, agent, world):
+                if a.name != _agent.name and self.is_collision(a, _agent, world):
                     rew -= 1
         return rew
     
@@ -232,14 +250,14 @@ class Scenario(BaseScenario):
         else:
             sampled_loc = world.A[loc]
         # communication of all other agents
-        comm = []
-        other_pos = []
-        for other in world.agents:
-            if other is agent:
-                continue
-            comm.append(other.state.c)
-            other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train] + comm)
+        # comm = []
+        # other_pos = []
+        # for other in world.agents:
+        #     if other is agent:
+        #         continue
+        #     comm.append(other.state.c)
+        #     other_pos.append(other.state.p_pos - agent.state.p_pos)
+        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train])
         # return [world.A[loc]]
     
     def outside_boundary(self, agent):
