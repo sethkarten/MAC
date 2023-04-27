@@ -251,6 +251,7 @@ def get_config():
     # adaptive sampling flags
     parser.add_argument("--use_GP", action='store_true', default=False, help='use GP method for adaptive sampling')
     parser.add_argument("--use_sampling_reward", action='store_false', default=True, help='use peak finding reward for adaptive sampling')
+    parser.add_argument("--env_size", type=int, default=32, help='size of adaptive sampling env')
 
 
     # optimizer parameters

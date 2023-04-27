@@ -98,7 +98,7 @@ class SharedReplayBuffer(object):
         # self.fr_masks = np.ones((self.episode_length + 1, self.n_rollout_threads,
         #                             num_agents, self.args.lookahead, 1), dtype=np.float32)
         self.agent_world = np.zeros((self.episode_length + 1, self.n_rollout_threads,
-                                     num_agents, 16*16), dtype=np.float32)
+                                     num_agents, args.env_size**2), dtype=np.float32)
 
         self.step = 0
 
