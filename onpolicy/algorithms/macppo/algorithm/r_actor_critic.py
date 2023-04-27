@@ -59,7 +59,8 @@ class MAC_R_Actor(nn.Module):
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
         if self.args.env_name == 'MPE':
-            self.reconstruct = MLPLayer(obs_shape[0], 16*16, 3, True, True)
+            
+            self.reconstruct = MLPLayer(self.hidden_size, args.env_size**2, 3, True, True)
 
         # autoencoder
         if self.args.use_ae:
@@ -106,7 +107,7 @@ class MAC_R_Actor(nn.Module):
 
         if self.args.env_name == 'MPE':
             # reconstruction of env
-            reconstruction = self.reconstruct(obs)
+            reconstruction = self.reconstruct(actor_features)
             return actions, action_log_probs, rnn_states, reconstruction
         else:
             return actions, action_log_probs, rnn_states

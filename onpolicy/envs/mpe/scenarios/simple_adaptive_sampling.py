@@ -19,23 +19,21 @@ from onpolicy.envs.mpe.scenarios.GP_mixture import mix_GPs
 import warnings
 warnings.filterwarnings(action='ignore')
 
-ENV_SIZE = 16
-
 
 class AdaptiveSamplingAgentState(AgentState):
-    def __init__(self):
+    def __init__(self, env_size):
         super(AdaptiveSamplingAgentState, self).__init__()
         # Current Agent Belief of World State
-        self.env_size = ENV_SIZE
+        self.env_size = env_size
         self.A = np.zeros((self.env_size, self.env_size))
         # print('init agent state')
 
 
 
 class AdaptiveSamplingWorld(World):
-    def __init__(self):
+    def __init__(self, env_size):
         super(AdaptiveSamplingWorld, self).__init__()
-        self.env_size = ENV_SIZE
+        self.env_size = env_size
         self.reset_sampling()
 
     def reset_sampling(self):
@@ -43,7 +41,9 @@ class AdaptiveSamplingWorld(World):
         k1d = signal.gaussian(N, std=1).reshape(N, 1)
         kernel = np.outer(k1d, k1d)
         self.A = np.zeros((self.env_size, self.env_size))
-        all_peaks = [1,1,1,0.5,0.5,0.5,0.5]
+        all_peaks = [1,1,1]
+        for k in range(10):
+            all_peaks.append(0.25)
         self.peaks = np.empty((len(all_peaks),2))
         for i, peak in enumerate(all_peaks):
             A_new = np.zeros((self.env_size, self.env_size))
@@ -75,8 +75,8 @@ class AdaptiveSamplingWorld(World):
 class AdaptiveSamplingAgent(Agent):
     def __init__(self, world):
         super(AdaptiveSamplingAgent, self).__init__()
-        self.state = AdaptiveSamplingAgentState()
-        self.env_size = ENV_SIZE
+        self.state = AdaptiveSamplingAgentState(world.env_size)
+        self.env_size = world.env_size
         # Specify kernel with initial hyperparameter estimates
         def kernel_initial(
                 σf_initial=1.0,         # covariance amplitude
@@ -137,7 +137,7 @@ class Scenario(BaseScenario):
 
         # self.A = A1 + A2 + A3
 
-        world = AdaptiveSamplingWorld()
+        world = AdaptiveSamplingWorld(args.env_size)
         world.world_length = args.episode_length
         # set any world properties first
         world.dim_c = 2
@@ -212,7 +212,7 @@ class Scenario(BaseScenario):
                     seen_peaks.append(closest_peak)
         else:
             # reconstruction reward
-            rew -= np.sum((_agent.state.A - world.A)**2)
+            rew -= np.mean((_agent.state.A - world.A)**2)
         if _agent.collide:
             for a in world.agents:
                 if a.name != _agent.name and self.is_collision(a, _agent, world):
@@ -257,7 +257,7 @@ class Scenario(BaseScenario):
         #         continue
         #     comm.append(other.state.c)
         #     other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()] + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train])
+        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()])# + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train])
         # return [world.A[loc]]
     
     def outside_boundary(self, agent):
