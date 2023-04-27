@@ -15,6 +15,6 @@ do
     --algorithm_name ${algo} --experiment_name ${exp} --scenario_name ${scenario} \
     --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
     --n_training_threads 1 --n_rollout_threads 20 --num_mini_batch 1 --episode_length 100 \
-    --num_env_steps 20000000 --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 1e-2 \
-    --critic_lr 1e-2 --use_recurrent_policy --mha_comm --no_comm
+    --num_env_steps 20000000 --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 1e-3 \
+    --critic_lr 1e-3 --use_recurrent_policy --mha_comm --no_comm
 done

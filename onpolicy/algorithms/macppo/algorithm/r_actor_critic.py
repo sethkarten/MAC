@@ -142,7 +142,7 @@ class MAC_R_Actor(nn.Module):
         comm_encoding = self.communicate.default_forward(actor_features)
         messages = self.communicate.communicate(comm_encoding)
         if self.args.use_ae:
-            decoded = self.decode(actor_features)
+            decoded = self.decode(comm_encoding)
         actor_features = torch.cat((messages, actor_features), -1)
         actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 

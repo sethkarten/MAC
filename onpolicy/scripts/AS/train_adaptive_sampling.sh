@@ -4,7 +4,7 @@ scenario="simple_adaptive_sampling"  # simple_speaker_listener # simple_referenc
 num_landmarks=3
 num_agents=3
 algo="macppo"
-exp="adaptive_sampling"
+exp="adaptive_sampling_reconstruction"
 seed_max=1
 
 echo "env is ${env}, scenario is ${scenario}, algo is ${algo}, exp is ${exp}, max seed is ${seed_max}"
@@ -15,6 +15,7 @@ do
     --algorithm_name ${algo} --experiment_name ${exp} --scenario_name ${scenario} \
     --num_agents ${num_agents} --num_landmarks ${num_landmarks} --seed ${seed} \
     --n_training_threads 1 --n_rollout_threads 20 --num_mini_batch 1 --episode_length 100 \
-    --num_env_steps 20000000 --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 1e-2 \
-    --critic_lr 1e-2 --use_recurrent_policy --mha_comm
+    --num_env_steps 20000000 --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 1e-3 \
+    --critic_lr 1e-3 --use_recurrent_policy --mha_comm --use_ae \
+    --hidden_size 64 --comm_dim 64 --use_sampling_reward
 done
