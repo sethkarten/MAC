@@ -138,5 +138,13 @@ class R_MAPPOPolicy:
                                   (if None, all actions available)
         :param deterministic: (bool) whether the action should be mode of distribution or should be sampled.
         """
-        actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, available_actions, deterministic)
-        return actions, rnn_states_actor
+        if self.args.env_name == 'MPE':
+            actions, action_log_probs, rnn_states_actor, reconstruction = self.actor(obs,
+                                                                    rnn_states_actor,
+                                                                    masks,
+                                                                    available_actions,
+                                                                    deterministic)
+            return actions, rnn_states_actor, reconstruction
+        else:
+            actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, available_actions, deterministic)
+            return actions, rnn_states_actor
