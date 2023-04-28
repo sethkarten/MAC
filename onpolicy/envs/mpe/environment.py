@@ -4,6 +4,8 @@ from gym.envs.registration import EnvSpec
 import numpy as np
 from .multi_discrete import MultiDiscrete
 
+from PIL import Image
+
 # update bounds to center around agent
 cam_range = 2
 
@@ -389,6 +391,14 @@ class MultiAgentEnv(gym.Env):
                         viewer.add_geom(geom)
 
         results = []
+        # reconstruction_results = [[] for a in self.world.agents]
+        reconstruction_results = []
+        if hasattr(self.world, 'use_GP'):
+            for i, a in enumerate(self.world.agents):
+                # img = Image.fromarray(a.state.A)
+                # img = img.resize(size=(700, 700))
+                img = np.array(Image.fromarray(a.state.A).resize(size=(700, 700)))
+                reconstruction_results.append(img)
         for i in range(len(self.viewers)):
             from . import rendering
 
@@ -420,7 +430,9 @@ class MultiAgentEnv(gym.Env):
             # render to display or array
             results.append(self.viewers[i].render(
                 return_rgb_array=mode == 'rgb_array'))
-
+        if hasattr(self.world, 'use_GP'):
+            results.append(reconstruction_results)
+            return results#, reconstruction_results
         return results
 
     # create receptor field locations in local coordinate frame

@@ -12,6 +12,7 @@ class MPERunner(Runner):
     """Runner class to perform training, evaluation. and data collection for the MPEs. See parent class for details."""
     def __init__(self, config):
         super(MPERunner, self).__init__(config)
+        self.gif_dir = self.all_args.gif_dir if self.all_args.gif_dir is not None else '.'
 
     def run(self):
         self.warmup()   
@@ -149,7 +150,7 @@ class MPERunner(Runner):
 
         for eval_step in range(self.episode_length):
             self.trainer.prep_rollout()
-            eval_action, eval_rnn_states = self.trainer.policy.act(np.concatenate(eval_obs),
+            eval_action, eval_rnn_states, reconstruction = self.trainer.policy.act(np.concatenate(eval_obs),
                                                 np.concatenate(eval_rnn_states),
                                                 np.concatenate(eval_masks),
                                                 deterministic=True)
@@ -188,11 +189,16 @@ class MPERunner(Runner):
         envs = self.envs
         
         all_frames = []
+        reconstructed_frames = [[] for i in range(self.all_args.num_agents)]
         for episode in range(self.all_args.render_episodes):
             obs = envs.reset()
             if self.all_args.save_gifs:
-                image = envs.render('rgb_array')[0][0]
+                imgs = envs.render('rgb_array')
+                image = imgs[0][0]
                 all_frames.append(image)
+                for i in range(self.all_args.num_agents):
+                    r_img = imgs[0][1][i]
+                    reconstructed_frames[i].append(r_img)
 
             rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -203,12 +209,13 @@ class MPERunner(Runner):
                 calc_start = time.time()
 
                 self.trainer.prep_rollout()
-                action, rnn_states = self.trainer.policy.act(np.concatenate(obs),
+                action, rnn_states, reconstruction = self.trainer.policy.act(np.concatenate(obs),
                                                     np.concatenate(rnn_states),
                                                     np.concatenate(masks),
                                                     deterministic=True)
                 actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
                 rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
+                reconstructions = np.array(np.split(_t2n(reconstruction), self.n_rollout_threads))
 
                 if envs.action_space[0].__class__.__name__ == 'MultiDiscrete':
                     for i in range(envs.action_space[0].shape):
@@ -223,7 +230,7 @@ class MPERunner(Runner):
                     raise NotImplementedError
 
                 # Obser reward and next obs
-                obs, rewards, dones, infos = envs.step(actions_env)
+                obs, rewards, dones, infos = envs.step(actions_env, reconstructions)
                 episode_rewards.append(rewards)
 
                 rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
@@ -231,8 +238,12 @@ class MPERunner(Runner):
                 masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
                 if self.all_args.save_gifs:
-                    image = envs.render('rgb_array')[0][0]
+                    imgs = envs.render('rgb_array')
+                    image = imgs[0][0]
                     all_frames.append(image)
+                    for i in range(self.all_args.num_agents):
+                        r_img = imgs[0][1][i]
+                        reconstructed_frames[i].append(r_img)
                     calc_end = time.time()
                     elapsed = calc_end - calc_start
                     if elapsed < self.all_args.ifi:
@@ -242,3 +253,6 @@ class MPERunner(Runner):
 
         if self.all_args.save_gifs:
             imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)
+            for i in range(self.all_args.num_agents):
+                imageio.mimsave(str(self.gif_dir) + '/render_reconstruction_agent' + str(i) + '.gif', reconstructed_frames[i], duration=self.all_args.ifi)
+

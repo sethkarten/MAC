@@ -1,5 +1,5 @@
 import numpy as np
-from onpolicy.envs.mpe.core import World, Agent, AgentState
+from onpolicy.envs.mpe.core import World, Agent, AgentState, Landmark
 from onpolicy.envs.mpe.scenario import BaseScenario
 from scipy import signal
 
@@ -35,6 +35,7 @@ class AdaptiveSamplingWorld(World):
         super(AdaptiveSamplingWorld, self).__init__()
         self.env_size = env_size
         self.reset_sampling()
+        self.use_GP = False
 
     def reset_sampling(self):
         N = 7   # kernel size
@@ -45,9 +46,22 @@ class AdaptiveSamplingWorld(World):
         for k in range(10):
             all_peaks.append(0.25)
         self.peaks = np.empty((len(all_peaks),2))
+        self.landmarks = [Landmark() for i in range(len(all_peaks))]
         for i, peak in enumerate(all_peaks):
             A_new = np.zeros((self.env_size, self.env_size))
             x,y = np.random.randint(0,self.env_size), np.random.randint(0,self.env_size)
+            self.landmarks[i].collide = False
+            self.landmarks[i].movable = False
+            loc = np.array([x, y]) # loc = (agent.state.p_pos + 1)*((world.env_size-1)/2)
+            pos = ((2/(self.env_size-1))*loc) - 1
+            self.landmarks[i].state.p_pos = pos
+            self.landmarks[i].state.p_vel = np.zeros(self.dim_p)
+            if peak == 1:
+                self.landmarks[i].name = 'max landmark %d' % i
+                self.landmarks[i].color = np.array([0.25, 0.25, 0.25])
+            else:
+                self.landmarks[i].name = 'min landmark %d' % i
+                self.landmarks[i].color = np.array([0.85, 0.35, 0.35])
             self.peaks[i, 0] = x
             self.peaks[i, 1] = y
             A_new[x, y] = peak
@@ -139,9 +153,10 @@ class Scenario(BaseScenario):
 
         world = AdaptiveSamplingWorld(args.env_size)
         world.world_length = args.episode_length
+        world.use_GP = args.use_GP
         # set any world properties first
         world.dim_c = 2
-        num_agents = 3
+        num_agents = args.num_agents
         # num_landmarks = 3
         world.collaborative = True
         # add agents
@@ -257,7 +272,7 @@ class Scenario(BaseScenario):
         #         continue
         #     comm.append(other.state.c)
         #     other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([[sampled_loc]] + [agent.state.A.flatten()])# + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train])
+        return np.concatenate([list(loc)] + [[sampled_loc]] + [agent.state.A.flatten()])# + np.array_split(agent.X_train.flatten(), agent.X_train.shape[0]) + [agent.y_train])
         # return [world.A[loc]]
     
     def outside_boundary(self, agent):
