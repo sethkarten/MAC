@@ -196,9 +196,10 @@ class MPERunner(Runner):
                 imgs = envs.render('rgb_array')
                 image = imgs[0][0]
                 all_frames.append(image)
-                for i in range(self.all_args.num_agents):
-                    r_img = imgs[0][1][i]
-                    reconstructed_frames[i].append(r_img)
+                if self.all_args.scenario_name == "simple_adaptive_sampling":
+                    for i in range(self.all_args.num_agents):
+                        r_img = imgs[0][1][i]
+                        reconstructed_frames[i].append(r_img)
 
             rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -241,9 +242,10 @@ class MPERunner(Runner):
                     imgs = envs.render('rgb_array')
                     image = imgs[0][0]
                     all_frames.append(image)
-                    for i in range(self.all_args.num_agents):
-                        r_img = imgs[0][1][i]
-                        reconstructed_frames[i].append(r_img)
+                    if self.all_args.scenario_name == "simple_adaptive_sampling":
+                        for i in range(self.all_args.num_agents):
+                            r_img = imgs[0][1][i]
+                            reconstructed_frames[i].append(r_img)
                     calc_end = time.time()
                     elapsed = calc_end - calc_start
                     if elapsed < self.all_args.ifi:
