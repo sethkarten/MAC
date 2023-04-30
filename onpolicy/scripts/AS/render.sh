@@ -18,6 +18,6 @@ do
     --num_env_steps 20000000 --ppo_epoch 10 --use_ReLU --gain 0.01 --lr 1e-3 \
     --critic_lr 1e-3 --use_recurrent_policy --mha_comm \
     --use_render --render_episodes 1 --save_gifs \
-    --model_dir "/home/skailas/CMU/Research/MAC/MAC_v2/MAC/onpolicy/scripts/results/MPE/simple_spread/macppo/adaptive_sampling_reconstruction/wandb/run-20230430_053526-2kx9bk7j/files" --cuda
+    --model_dir "/home/skailas/CMU/Research/MAC/MAC_v2/MAC/onpolicy/scripts/results/MPE/simple_spread/macppo/adaptive_sampling_reconstruction/wandb/run-20230430_053526-2kx9bk7j/files"
 
 done
