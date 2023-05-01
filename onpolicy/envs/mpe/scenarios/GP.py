@@ -57,16 +57,21 @@ class GP:
         self.X_train.append(x)
         self.y_train.append(y)
         self.σ_noises.append(σ_noise)
+        # if np.all(np.isfinite(σ_noise)) == False:
+        #     print(σ_noise)
         self.update_psi_diagonals()
     
     def add_training_points(self, xs, ys, σ_noises):
         self.X_train.extend(xs)
         self.y_train.extend(ys)
         self.σ_noises.extend(σ_noises)
+        # if np.all(np.isfinite(σ_noises)) == False:
+        #     print(σ_noises)
         self.update_psi_diagonals()
     
     def update_psi_diagonals(self):
         self.psi_diagonals = [σ**2 for σ in self.σ_noises]
+        # print(self.psi_diagonals)
 
     def query(self, X_test):
         """
@@ -80,15 +85,28 @@ class GP:
         X2 = np.array(X_test)
         psi = np.diag(self.psi_diagonals)
         # print(psi)
+        # if np.all(np.isfinite(X1)) == False:
+        #     print('NaN or Inf in X1')
+        # if np.all(np.isfinite(y1)) == False:
+        #     print('NaN or Inf in y1')
+        # if np.all(np.isfinite(X2)) == False:
+        #     print('NaN or Inf in X2')
+        # if np.all(np.isfinite(psi)) == False:
+        #     print('NaN or Inf in psi')
+        #     print(self.psi_diagonals)
 
         # Kernel of the observations
         Σ11 = self.kernel_func(X1, X1)
+        # if np.all(np.isfinite(Σ11)) == False:
+        #     print('NaN or Inf in Σ11')
 
         # Account for measurement noise
         Σ11 += psi
 
         # Kernel of train points vs test points
         Σ12 = self.kernel_func(X1, X2)
+        # if np.all(np.isfinite(Σ12)) == False:
+        #     print('NaN or Inf in Σ12')
 
         # Compute (Σ11^(-1) * Σ12)^T
         try:
