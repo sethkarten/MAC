@@ -21,6 +21,8 @@ def sklearn2custom(gp_sklearn: GaussianProcessRegressor):
     gp = GP(kernel_func=rbf_kernel)
 
     σ_noise = gp_sklearn.kernel_.k2.noise_level
+    # if np.all(np.isfinite(σ_noise)) == False:
+    #         print(σ_noise)
     gp.add_training_points(
         gp_sklearn.X_train_,
         gp_sklearn.y_train_,
@@ -51,6 +53,11 @@ def mix_GPs(GPs_sklearn: List[GaussianProcessRegressor]):
 
     X_train_combined = np.concatenate([gp.X_train for gp in GPs])
     y_train_combined = np.concatenate([gp.y_train for gp in GPs])
+
+    # if np.all(np.isfinite(X_train_combined)) == False:
+    #     print('NaN or Inf in X_train')
+    # if np.all(np.isfinite(y_train_combined)) == False:
+    #     print('NaN or Inf in y_train')
 
     """
     P_z[j, i] represents P(z(x_j) = i)
