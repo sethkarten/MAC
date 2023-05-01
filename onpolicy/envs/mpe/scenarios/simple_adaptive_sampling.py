@@ -16,8 +16,14 @@ from scipy.stats import multivariate_normal
 
 from onpolicy.envs.mpe.scenarios.GP_mixture import mix_GPs
 
+from joblib import Parallel, delayed
+
 import warnings
 warnings.filterwarnings(action='ignore')
+
+ADD_NOISE_TO_ENV = False
+PARALLEL_GP = True
+NUM_JOBS = 3
 
 
 class AdaptiveSamplingAgentState(AgentState):
@@ -85,6 +91,8 @@ class AdaptiveSamplingWorld(World):
             A_new[x_min:x_max, y_min:y_max] = peak*_kernel
     
             self.A = self.A + A_new
+            if ADD_NOISE_TO_ENV:
+                self.A = self.A + np.random.normal(0, 0.001, size=A_new.shape)
 
 class AdaptiveSamplingAgent(Agent):
     def __init__(self, world):
@@ -245,9 +253,15 @@ class Scenario(BaseScenario):
         agent.y_train = world.A[agent.X_train[:,0], agent.X_train[:,1]]
         if self.use_GP:
             GPs = []
-            for i, a in enumerate(world.agents):
-                a.gp.fit(a.X_train, a.y_train)
-                GPs.append(a.gp)
+            if PARALLEL_GP:
+                def gp_train(a):
+                    a.gp.fit(a.X_train, a.y_train)
+                    return a.gp
+                GPs = Parallel(n_jobs=NUM_JOBS)(delayed(gp_train)(a) for a in world.agents)
+            else:
+                for i, a in enumerate(world.agents):
+                    a.gp.fit(a.X_train, a.y_train)
+                    GPs.append(a.gp)
             GP_mixture_model = mix_GPs(GPs)
             X_test_x = np.arange(world.env_size)
             X_test_y = np.arange(world.env_size)
