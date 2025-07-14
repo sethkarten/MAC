@@ -4,7 +4,7 @@ This repository provides a research framework for studying **emergent communicat
 
 ## Key Features
 
-- **On-Policy MARL Algorithms**: Includes implementations of algorithms such as RMAPPo, TMAPPo, MACPPO, MEMO_PPO, and more.
+- **On-Policy MARL Algorithms**: Includes implementations of algorithms such as MAPPO with communication.
 - **Emergent Communication**: Tools and environments for analyzing and interpreting communication between agents.
 - **Diverse Environments**: Supports StarCraft II, Hanabi, MPE (Multi-Agent Particle Environments), Traffic Junction, MNIST-based tasks, and more.
 - **Extensible Framework**: Modular design for easy addition of new algorithms, environments, and communication protocols.
