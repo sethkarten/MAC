@@ -1,119 +1,86 @@
-NOTE: check pascal_voc_env for self.resize and also check r_actor_critic for use_cnn
-NOTE: forward pass for ResNet (and possibly VGG) use batch norm so setting n_rollout = n_training = 1 will fail
-NOTE: check logic in pascal_voc_runner.py to make sure changes are not incorrect
-NOTE: ResNet and VGG are pre-trained but should weights be frozen?
-# MAPPO
+# Multi-Agent Emergent Communication (MAC)
 
-Chao Yu*, Akash Velu*, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu.
+This repository provides a research framework for studying **emergent communication** in multi-agent reinforcement learning (MARL) environments. It supports a variety of on-policy algorithms and environments, enabling the exploration of how communication protocols arise, evolve, and can be interpreted in cooperative and competitive multi-agent settings.
 
-Website: https://sites.google.com/view/mappo
+## Key Features
 
-This repository implements MAPPO, a multi-agent variant of PPO. The implementation in this repository is used in the paper "The Surprising Effectiveness of MAPPO in Cooperative Multi-Agent Games" (https://arxiv.org/abs/2103.01955). 
-This repository is heavily based on https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail.
+- **On-Policy MARL Algorithms**: Includes implementations of algorithms such as RMAPPo, TMAPPo, MACPPO, MEMO_PPO, and more.
+- **Emergent Communication**: Tools and environments for analyzing and interpreting communication between agents.
+- **Diverse Environments**: Supports StarCraft II, Hanabi, MPE (Multi-Agent Particle Environments), Traffic Junction, MNIST-based tasks, and more.
+- **Extensible Framework**: Modular design for easy addition of new algorithms, environments, and communication protocols.
+- **Experiment Scripts**: Ready-to-use scripts for training, evaluation, and rendering across supported environments.
 
-## Environments supported:
+## Installation
 
-- [StarCraftII (SMAC)](https://github.com/oxwhirl/smac)
-- [Hanabi](https://github.com/deepmind/hanabi-learning-environment)
-- [Multiagent Particle-World Environments (MPEs)](https://github.com/openai/multiagent-particle-envs)
+1. **Clone the repository:**
+   ```bash
+   git clone <repo-url>
+   cd MAC
+   ```
 
-## 1. Usage
-All core code is located within the onpolicy folder. The algorithms/ subfolder contains algorithm-specific code
-for MAPPO.
+2. **Install dependencies:**
+   - Using pip:
+     ```bash
+     pip install -r requirements.txt
+     ```
+   - Or with conda:
+     ```bash
+     conda env create -f environment.yaml
+     conda activate mac
+     ```
 
-* The envs/ subfolder contains environment wrapper implementations for the MPEs, SMAC, and Hanabi.
+## Repository Structure
 
-* Code to perform training rollouts and policy updates are contained within the runner/ folder - there is a runner for
-each environment.
+- `onpolicy/algorithms/` — On-policy MARL algorithms (e.g., RMAPPo, MACPPO, MEMO_PPO)
+- `onpolicy/envs/` — Supported environments (StarCraft2, Hanabi, MPE, Traffic Junction, MNIST, etc.)
+- `onpolicy/runner/` — Training and evaluation runners
+- `onpolicy/scripts/` — Shell scripts for launching experiments and evaluations
+- `onpolicy/utils/` — Utility functions and helpers
+- `onpolicy/config.py` — Centralized configuration and hyperparameter management
 
-* Executable scripts for training with default hyperparameters can be found in the scripts/ folder. The files are named
-in the following manner: train_algo_environment.sh. Within each file, the map name (in the case of SMAC and the MPEs) can be altered.
-* Python training scripts for each environment can be found in the scripts/train/ folder.
+## Getting Started
 
-* The config.py file contains relevant hyperparameter and env settings. Most hyperparameters are defaulted to the ones
-used in the paper; however, please refer to the appendix for a full list of hyperparameters used.
-
-
-## 2. Installation
-
- Here we give an example installation on CUDA == 10.1. For non-GPU & other CUDA version installation, please refer to the [PyTorch website](https://pytorch.org/get-started/locally/).
-
-``` Bash
-# create conda environment
-conda create -n marl python==3.6.1
-conda activate marl
-pip install torch==1.5.1+cu101 torchvision==0.6.1+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+To train a model in a supported environment, use one of the provided scripts. For example:
+```bash
+bash onpolicy/scripts/train/train_smac_8m.sh
 ```
+Modify the scripts or use `onpolicy/config.py` to adjust hyperparameters and experiment settings.
 
-```
-# install on-policy package
-cd on-policy
-pip install -e .
-```
+## Citing This Work
 
-Even though we provide requirement.txt, it may have redundancy. We recommend that the user try to install other required packages by running the code and finding which required package hasn't installed yet.
+If you use this repository or its components in your research, please cite the following works:
 
-### 2.1 Install StarCraftII [4.10](http://blzdistsc2-a.akamaihd.net/Linux/SC2.4.10.zip)
-
-
-
-``` Bash
-unzip SC2.4.10.zip
-# password is iagreetotheeula
-echo "export SC2PATH=~/StarCraftII/" > ~/.bashrc
-```
-
-* download SMAC Maps, and move it to `~/StarCraftII/Maps/`.
-
-* To use a stableid, copy `stableid.json` from https://github.com/Blizzard/s2client-proto.git to `~/StarCraftII/`.
-
-
-### 2.2 Hanabi
-Environment code for Hanabi is developed from the open-source environment code, but has been slightly modified to fit the algorithms used here.  
-To install, execute the following:
-``` Bash
-pip install cffi
-cd envs/hanabi
-mkdir build & cd build
-cmake ..
-make -j
-```
-
-
-### 2.3 Install MPE
-
-``` Bash
-# install this package first
-pip install seaborn
-```
-
-There are 3 Cooperative scenarios in MPE:
-
-* simple_spread
-* simple_speaker_listener, which is 'Comm' scenario in paper
-* simple_reference
-
-## 3.Train
-Here we use train_mpe.sh as an example:
-```
-cd onpolicy/scripts
-chmod +x ./train_mpe.sh
-./train_mpe.sh
-```
-Local results are stored in subfold scripts/results. Note that we use Weights & Bias as the default visualization platform; to use Weights & Bias, please register and login to the platform first. More instructions for using Weights&Bias can be found in the official [documentation](https://docs.wandb.ai/). Adding the `--use_wandb` in command line or in the .sh file will use Tensorboard instead of Weights & Biases.
-
-We additionally provide `./eval_hanabi_forward.sh` for evaluating the hanabi score over 100k trials.
-
-## 4. Publication
-
-If you find this repository useful, please cite our [paper](https://arxiv.org/abs/2103.01955):
-```
-@misc{yu2021surprising,
-      title={The Surprising Effectiveness of MAPPO in Cooperative Multi-Agent Games},
-      author={Chao Yu and Akash Velu and Eugene Vinitsky and Yu Wang and Alexandre Bayen and Yi Wu},
-      year={2021},
-      eprint={2103.01955},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG}
+```bibtex
+@article{karten2023interpretable,
+  title={Interpretable learned emergent communication for human--agent teams},
+  author={Karten, Seth and Tucker, Mycal and Li, Huao and Kailas, Siva and Lewis, Michael and Sycara, Katia},
+  journal={IEEE Transactions on Cognitive and Developmental Systems},
+  volume={15},
+  number={4},
+  pages={1801--1811},
+  year={2023},
+  publisher={IEEE}
+}
+@article{karten2023role,
+  title={On the role of emergent communication for social learning in multi-agent reinforcement learning},
+  author={Karten, Seth and Kailas, Siva and Li, Huao and Sycara, Katia},
+  journal={arXiv preprint arXiv:2302.14276},
+  year={2023}
+}
+@article{karten2022towards,
+  title={Towards true lossless sparse communication in multi-agent systems},
+  author={Karten, Seth and Tucker, Mycal and Kailas, Siva and Sycara, Katia},
+  journal={arXiv preprint arXiv:2212.00115},
+  year={2022}
+}
+@phdthesis{karten2023emergent,
+  title={Emergent Communication and Decision-Making in Multi-Agent Teams},
+  author={Karten, Seth},
+  year={2023},
+  school={Carnegie Mellon University Pittsburgh, PA}
 }
 ```
+
+## License
+
+This project is licensed under the MIT License.
